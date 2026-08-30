@@ -120,8 +120,9 @@ int main(void) {
         check(count_occurrences(ui, "\"level\":") == 7,
               "test1: root carries seven nav entries — Mix and six loops");
         /* One deliberate blank cell on Main. */
-        check(strstr(ui, "\"master_widen\",\"\"") != NULL,
-              "test1: Main's last cell is a load-bearing blank");
+        check(strstr(ui, "\"master_resync\",\"\",\"master_state\"") != NULL,
+              "test1: Main's third cell is a load-bearing blank, holding the\n"
+              "       momentary buttons apart from the readout");
 
         api->destroy_instance(inst);
     }

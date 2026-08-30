@@ -16,7 +16,7 @@
  * PAGES (one ui_hierarchy level each; the host renders 8 knobs per page,
  * 4 across x 2 rows):
  *
- *   Main    PLAY  SYNC  BASE  SPRD  /  STATE RSYN  WIDEN ....
+ *   Main    PLAY  RSYN  ....  STATE /  BASE  SPRD  WIDEN SYNC
  *   Mix     1     2     3     4     /  5     6     DRY   OUT
  *   Loop 1  REC   TRIG  START END   /  BPM   BEAT  FIT   PHAS
  *   ...     (Loop 2..6 identical)
@@ -674,20 +674,29 @@ static int build_ui_hierarchy(char *buf, int len) {
     pos += snprintf(json + pos, sizeof(json) - pos,
         "{\"modes\":null,\"levels\":{"
         "\"root\":{\"label\":\"Wayward\","
-          /* Transport and the ensemble's shape on top; what you hear and the
-           * one blank cell underneath. SPRD sits beside BASE because the two
-           * are read together: BASE is where the piece is, SPRD is how fast
-           * it comes apart. */
-          "\"knobs\":[\"master_play\",\"master_sync\",\"master_base\",\"master_spread\","
-                     "\"master_state\",\"master_resync\",\"master_widen\",\"\"],"
+          /* TOP ROW IS THE TRANSPORT, BOTTOM ROW IS THE TUNING.
+           *
+           * The two things you touch mid-performance are PLAY and RSYN, so
+           * they take the two leftmost cells — the ones a hand finds without
+           * looking. STATE sits at the end of the same row, reporting on what
+           * those two just did, with the blank cell between them holding the
+           * momentary buttons apart from the readout so that neither is
+           * reached by accident.
+           *
+           * The bottom row is set once and left: BASE and SPRD adjacent
+           * because they are read together (BASE is where the piece is, SPRD
+           * is how fast it comes apart), then WIDEN, then SYNC — the least
+           * touched control on the page, furthest from the hand. */
+          "\"knobs\":[\"master_play\",\"master_resync\",\"\",\"master_state\","
+                     "\"master_base\",\"master_spread\",\"master_widen\",\"master_sync\"],"
           "\"params\":["
             "{\"key\":\"master_play\",\"label\":\"Play\"},"
-            "{\"key\":\"master_sync\",\"label\":\"Sync\"},"
+            "{\"key\":\"master_resync\",\"label\":\"Resync\"},"
+            "{\"key\":\"master_state\",\"label\":\"State\"},"
             "{\"key\":\"master_base\",\"label\":\"Base\"},"
             "{\"key\":\"master_spread\",\"label\":\"Spread\"},"
-            "{\"key\":\"master_state\",\"label\":\"State\"},"
-            "{\"key\":\"master_resync\",\"label\":\"Resync\"},"
             "{\"key\":\"master_widen\",\"label\":\"Widen\"},"
+            "{\"key\":\"master_sync\",\"label\":\"Sync\"},"
             "{\"level\":\"mix\",\"label\":\"Mix\"},"
             "{\"level\":\"loop1\",\"label\":\"Loop 1\"},"
             "{\"level\":\"loop2\",\"label\":\"Loop 2\"},"

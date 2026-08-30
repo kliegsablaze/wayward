@@ -84,9 +84,17 @@ are effectively capped at 5–6 by the cell width.
 ### Main
 
 ```
-PLAY   SYNC   BASE   SPRD
-STATE  RSYN   WIDEN  ····
+PLAY   RSYN   ····   STATE
+BASE   SPRD   WIDEN  SYNC
 ```
+
+Top row is the transport, bottom row the tuning. PLAY and RSYN are the two
+controls touched mid-performance, so they take the leftmost cells — the ones a
+hand finds without looking — with STATE at the end of the same row reporting
+on what they just did, and the blank cell between them keeping the momentary
+buttons clear of the readout. The bottom row is set once and left: BASE beside
+SPRD because they are read together, then WIDEN, then SYNC, the least-touched
+control on the page and the furthest from the hand.
 
 | key | type | |
 |---|---|---|
