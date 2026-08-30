@@ -502,6 +502,25 @@ page for it), and the realignment countdown the phasing maths makes
 computable.
 
 
+## The manual
+
+`docs/index.html` is the user manual, served from GitHub Pages. It carries a
+pixel-exact reconstruction of the Move's 128×64 display — the hardware font
+transcribed by hand as column bitmaps, and the dial, enum-box and trigger
+widgets redrawn — so every page can be walked and every control clicked
+without a device. It was lifted wholesale from Forgetful, which is why it is
+worth keeping in sync rather than rewriting.
+
+Two things to know when editing it:
+
+- **A blank cell is a `kind:"blank"` entry**, not a missing one. The renderer
+  skips it and no hit target is made. Forgetful had none, so this was added
+  here; every page must still declare exactly eight cells.
+- **The manual can silently drift from the module.** The check that catches it
+  is to dump `ui_hierarchy` from a native build and compare the knob arrays
+  against the manual's cell lists, page by page — order, count and blank
+  positions. Worth re-running after any layout change.
+
 ## Testing
 
 `tests/run.sh` builds natively with `-Wall -Wextra -Werror` and drives the

@@ -15,6 +15,10 @@ Ableton Move, and a sibling to
 into four memories that decay. This one takes six that don't, and lets them
 fall out of step instead.
 
+**[Read the manual →](https://kliegsablaze.github.io/wayward/)** — every
+control on all five pages, walked through on interactive reconstructions of
+the Move's own display.
+
 See [DESIGN.md](DESIGN.md) for the interaction model, the phasing maths, and
 the DSP architecture.
 
@@ -25,10 +29,17 @@ the DSP architecture.
 
 ## Installing
 
-Not yet released. Build it yourself, or deploy to a Move with
-`scripts/install.sh` (below).
+Wayward is not in the Schwung module catalog yet. Install it with the Schwung
+Manager's **Install custom module** option, which asks for a GitHub repo link:
 
-Will need **Schwung 0.12.1 or newer**.
+1. Open `http://move.local:7700`
+2. Choose **Install custom module**
+3. Give it `https://github.com/kliegsablaze/wayward`
+
+Needs **Schwung 0.12.1 or newer**.
+
+Once it is in the catalog, the Module Store will install and update it like
+any other module, and this section and the manual will say so instead.
 
 ## Building
 

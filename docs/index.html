@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wayward — User Manual</title>
+<meta name="description" content="User manual for Wayward, a Schwung module for the Ableton Move — six loops, each keeping its own time. Reconstructed, interactive screens for every page and control.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌀</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#05070c; --panel:#0a0e1a; --panel2:#0e1424;
+  --ink:#b7c2da; --ink-hi:#d9e2f2; --dim:#5a6584; --dim2:#33395038;
+  --line:rgba(183,194,218,.14); --line2:rgba(183,194,218,.06);
+  --accent:#6ea8e8; --accent-dim:#3c5c85;
+  --fade:#2c3550;
+  --disp:"Space Mono","SFMono-Regular",Consolas,monospace;
+  --body:"Source Serif 4",Georgia,"Times New Roman",serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:17px;line-height:1.68}
+.wrap{max-width:760px;margin:0 auto;padding:0 26px}
+h1,h2,h3{font-family:var(--disp);text-wrap:balance}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--accent-dim)}
+a:hover{border-bottom-color:var(--accent)}
+a:focus-visible,button:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+code{font-family:var(--disp);font-size:.85em;color:var(--ink-hi);background:var(--panel2);
+  border:1px solid var(--line);border-radius:3px;padding:.1em .38em}
+b{font-weight:600;color:var(--ink-hi)}
+
+nav{position:sticky;top:0;z-index:40;background:rgba(5,7,12,.92);backdrop-filter:blur(6px);
+  border-bottom:1px solid var(--line)}
+nav .wrap{display:flex;align-items:center;gap:20px;height:46px;overflow-x:auto;scrollbar-width:none}
+nav .wrap::-webkit-scrollbar{display:none}
+nav .logo{font-family:var(--disp);font-weight:700;font-size:13px;letter-spacing:.02em;color:var(--ink-hi);
+  border:none;flex:none}
+nav a.s{font-family:var(--disp);font-size:11px;color:var(--dim);border:none;flex:none}
+nav a.s:hover{color:var(--ink)}
+
+header{padding:64px 0 40px}
+.kicker{font-family:var(--disp);font-size:11px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase;
+  margin-bottom:14px}
+h1.title{font-weight:700;font-size:clamp(38px,6.5vw,58px);color:var(--ink-hi);letter-spacing:-.01em}
+.lede{max-width:520px;margin-top:18px;font-size:19px;color:var(--ink)}
+.lede b{color:var(--accent)}
+.chips{margin-top:22px;font-family:var(--disp);font-size:11.5px;color:var(--dim)}
+.chips b{color:var(--ink)}
+
+section{padding:60px 0 6px;border-top:1px solid var(--line2)}
+section:first-of-type{border-top:0}
+.eyebrow{font-family:var(--disp);font-size:11px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;
+  margin-bottom:10px}
+h2.sh{font-weight:700;font-size:clamp(24px,3.6vw,32px);color:var(--ink-hi);margin:0 0 16px}
+p+p{margin-top:13px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:34px}
+@media(max-width:680px){.cols{grid-template-columns:1fr}}
+.note{border-left:2px solid var(--accent-dim);padding:4px 0 4px 16px;margin:20px 0;font-size:15.5px;color:var(--dim)}
+.note b{color:var(--ink)}
+.seq{font-family:var(--disp);font-size:14px;color:var(--dim);letter-spacing:.02em;margin-top:18px}
+.seq b{color:var(--accent)}
+
+/* ---------- reconstructed device screen ----------
+   Sized to match the prose column (.wrap) exactly — no wider, no narrower. */
+.device{margin-top:28px}
+.screen-frame{background:#000;border:1px solid var(--line);border-radius:4px;padding:18px;
+  display:block;box-sizing:border-box;width:100%;max-width:708px}
+.screen{image-rendering:pixelated;image-rendering:crisp-edges;-ms-interpolation-mode:nearest-neighbor;
+  width:100%;aspect-ratio:2/1;display:block;background:#000;
+  animation:breathe 7s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.9}}
+.hitgrid{position:relative;width:100%}
+.hit{position:absolute;background:transparent;border:0;cursor:pointer}
+.hit:hover,.hit:focus-visible{background:rgba(110,168,232,.1)}
+.device-cap{font-family:var(--disp);font-size:10.5px;color:var(--dim);letter-spacing:.06em;margin-top:8px}
+.inspect{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);min-height:56px}
+.inspect .it{font-family:var(--disp);font-size:12px;color:var(--accent);letter-spacing:.04em}
+.inspect .id{font-size:15px;color:var(--ink);margin-top:5px;max-width:560px}
+
+/* ---------- flavor list ---------- */
+.flist{margin-top:22px;border-top:1px solid var(--line)}
+.frow{display:grid;grid-template-columns:110px 1fr;gap:18px;padding:16px 0;border-bottom:1px solid var(--line)}
+@media(max-width:560px){.frow{grid-template-columns:1fr}}
+.frow .fn{font-family:var(--disp);font-weight:700;color:var(--ink-hi);font-size:15px}
+.frow .fk{font-family:var(--disp);font-size:10px;color:var(--dim);margin-top:3px}
+.frow .fd{font-size:15.5px;color:var(--ink)}
+.frow .fd b{color:var(--accent)}
+
+/* ---------- spec ---------- */
+dl.spec{margin-top:20px;border-top:1px solid var(--line)}
+dl.spec div{display:grid;grid-template-columns:200px 1fr;gap:16px;padding:11px 0;border-bottom:1px solid var(--line2)}
+@media(max-width:560px){dl.spec div{grid-template-columns:1fr}}
+dl.spec dt{font-family:var(--disp);font-size:11.5px;color:var(--dim);letter-spacing:.03em}
+dl.spec dd{font-size:15px;color:var(--ink);font-variant-numeric:tabular-nums}
+
+.tscroll{overflow-x:auto;margin:18px 0}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:420px}
+th{font-family:var(--disp);font-size:10.5px;letter-spacing:.06em;color:var(--dim);text-align:left;
+  padding:8px 12px;border-bottom:1px solid var(--line)}
+td{padding:10px 12px;border-bottom:1px solid var(--line2)}
+td:first-child{font-family:var(--disp);color:var(--ink-hi);white-space:nowrap}
+
+footer{margin-top:70px;border-top:1px solid var(--line);padding:32px 0 60px;font-family:var(--disp);
+  font-size:11.5px;color:var(--dim);line-height:1.9}
+
+@media(max-width:640px){header{padding:44px 0 32px}section{padding:44px 0 6px}}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="logo" href="#top">WAYWARD</a>
+  <a class="s" href="#what">What it is</a>
+  <a class="s" href="#main-page">Main</a>
+  <a class="s" href="#shape-page">Shape</a>
+  <a class="s" href="#loop-page">Loop</a>
+  <a class="s" href="#mix-page">Mix</a>
+  <a class="s" href="#orbits-page">Orbits</a>
+  <a class="s" href="#drift">The drift</a>
+  <a class="s" href="#ideas">Ideas</a>
+</div></nav>
+
+<div class="wrap" id="top">
+
+<header>
+  <div class="kicker">Schwung module · Ableton Move · User manual</div>
+  <h1 class="title">Wayward</h1>
+  <p class="lede">Six fragments of whatever you are playing, each looped at a
+    tempo a beat or two from its neighbour. They start together and then
+    <b>disagree</b> — sliding out of alignment and back, over minutes.</p>
+  <p class="chips">wayward <b>v0.8.1</b> · audio_fx · requires <b>schwung</b></p>
+</header>
+
+<section id="what">
+  <div class="eyebrow">What it is</div>
+  <h2 class="sh">Six loops, each keeping its own time</h2>
+  <div class="cols">
+    <div>
+      <p>Record six short fragments from whatever is feeding the module. Tell
+      each one what tempo its loop should keep — 100, 101, 102, 103, 104,
+      105 — and press play. They begin on the same instant and then come
+      apart, because a loop at 101 is very slightly shorter than a loop at
+      100, and a hair of difference repeated a hundred times is a minute.</p>
+      <p>This is the oldest trick in tape music: two loops of unequal length,
+      started together, left to disagree. Reich's <i>Come Out</i>, Eno's
+      <i>Discreet Music</i>, Basinski's <i>Disintegration Loops</i>. Wayward's
+      contribution is to put the disagreement on a knob.</p>
+    </div>
+    <div>
+      <p><b>Nothing is stretched to fit.</b> If your fragment is shorter than
+      the beat it has been given, the rest of the beat is silence; if it is
+      longer, it is cut off where the loop restarts. That honesty is the
+      point — you hear a sound and then a rest, and it is the rests, falling
+      differently against one another, that make the drift audible at all.</p>
+      <p>Five pages. <b>Main</b> records and runs the thing. <b>Shape</b> tunes
+      how fast it comes apart. <b>Loop</b> edits one loop at a time. <b>Mix</b>
+      balances. <b>Orbits</b> tells you where everything is.</p>
+      <p class="seq"><b>Rec</b> → <b>Play</b> → <b>drift</b> → <b>drift back</b></p>
+    </div>
+  </div>
+</section>
+
+<section id="setup">
+  <div class="eyebrow">Setup</div>
+  <h2 class="sh">Load it into a chain slot</h2>
+  <p>Wayward is not in the Schwung catalog yet. Install it through the
+  Manager's <b>Install custom module</b> option, which asks for a GitHub repo
+  link — give it
+  <code>https://github.com/kliegsablaze/wayward</code>. Open
+  <code>move.local:7700</code> to find it. Needs Schwung
+  <b>0.12.1 or newer</b>.</p>
+
+  <div class="note"><b>It never saves its settings.</b> Wayward comes up at
+  its defaults every time, in every set — no autosave, nothing restored from a
+  saved project. Six takes and the tempi you tuned them to are a performance,
+  not a preset. The cost is that Schwung's User Presets and chain patches
+  cannot capture this module either.</div>
+
+  <p>It is <code>audio_fx</code>, <code>chainable</code> — drop it into any
+  Signal Chain fx slot. Nothing to configure: press <b>REC 1</b>, play
+  something, press it again, and loop 1 is running.</p>
+
+  <div class="note"><b>Recording starts where you do.</b> The silence between
+  pressing REC and actually playing is trimmed off the front of every take
+  automatically, so you never have to dial it out by hand. A few milliseconds
+  are kept in front of the first sound, because an attack begins slightly
+  before it crosses the threshold and cutting flush to it shaves the edge off
+  every transient.</div>
+</section>
+
+<!-- ============================ MAIN ============================ -->
+<section id="main-page">
+  <div class="eyebrow">Screen — page 1 of 5</div>
+  <h2 class="sh">Main</h2>
+  <p>The page you land on, and the only one you need while playing: six record
+  buttons and the transport. The six sit in a block on the left, in the same
+  arrangement they hold on Mix and Orbits, so loop 5 is always in the same
+  place under your hand. Click a control to see what it does.</p>
+  <div class="device" id="mainDevice"></div>
+
+  <div class="flist">
+    <div class="frow"><div><div class="fn">REC 1–6</div></div>
+      <div class="fd">One button per loop, three stages, each press moving to the next. <b>Press</b> to start recording into that loop; <b>press again</b> to close the take, which starts looping immediately; <b>press while it plays</b> to overdub, layering onto what is already there without erasing it. The readout names what the <i>next</i> press will do — <b>REC</b>, <b>STOP</b>, <b>DUB</b>, <b>PLAY</b>.
+      <br>You record into the loop whose button you press, so there is no routing to think about. A take can run up to thirty seconds; that is a safety net, not a target.
+      <br>Since Schwung 1.0 a <b>turn</b> of the knob fires it as well as a click — a whole flick counts as one press.</div></div>
+    <div class="frow"><div><div class="fn">PLAY</div></div>
+      <div class="fd">Starts all six at the same instant, from the top of their cycles. That shared instant is the thing the whole piece drifts away from, and the moment Orbits counts from. Press again to stop.</div></div>
+    <div class="frow"><div><div class="fn">RSYN</div></div>
+      <div class="fd">Re-aligns every loop <i>without</i> stopping. Where PLAY starts the process, this restarts it mid-flight: whatever has drifted apart snaps back together and immediately begins sliding again. The most useful control on the page once things are running.</div></div>
+  </div>
+
+  <div class="note"><b>A button cannot show its own state.</b> The Move draws a
+  trigger as a button and nothing else, so <code>REC 3</code> reads
+  <code>REC 3</code> whether or not loop 3 is recording. The words above appear
+  in the header strip while you hold the knob — and the <b>Orbits</b> page
+  shows all six states at once, which is why it exists.</div>
+</section>
+
+<!-- ============================ SHAPE ============================ -->
+<section id="shape-page">
+  <div class="eyebrow">Screen — page 2 of 5</div>
+  <h2 class="sh">Shape</h2>
+  <p>How the ensemble is tuned: where it sits, how fast it comes apart, how
+  wide it spreads. Set once and left, which is why none of it is on Main.</p>
+  <div class="device" id="shapeDevice"></div>
+
+  <div class="flist">
+    <div class="frow"><div><div class="fn">BASE</div></div>
+      <div class="fd">The reference tempo, 40 to 200. On its own it does nothing — it is the number the other five loops are measured from.</div></div>
+    <div class="frow"><div><div class="fn">SPRD</div></div>
+      <div class="fd">The instrument, really. Loop <i>n</i> runs at <code>BASE + n × SPRD</code>, so one knob decides how fast the whole piece comes apart.
+      <br>At <b>0</b> all six are the same length and stay locked together forever — a rhythmic stack that never moves. At <b>1</b> they are 100 through 105 and take minutes to separate and return. At <b>5</b> or more the relationships get simple enough to hear as polyrhythm rather than drift.
+      <br>Negative fans them downward instead. Turning it back to 0 is the largest gesture on the module: the drifting stops dead, wherever it had got to.</div></div>
+    <div class="frow"><div><div class="fn">WIDEN</div></div>
+      <div class="fd">Fans the six across the stereo field — not a position but a spread. At 0 they are all centred. This matters more than it sounds: six loops phasing in mono turn to mud, and the same six spread across the image read as separate voices you can follow one at a time.</div></div>
+    <div class="frow"><div><div class="fn">CLEAR</div></div>
+      <div class="fd">Erases all six takes and returns every setting to its default — but not at once. It <b>fades the ensemble over fifteen seconds</b> and wipes at the end.
+      <br>The delay is the safety: there is no confirmation dialog on this screen, so instead the module announces what it is about to do in the only language it has. <b>Press again to call it off</b> and everything comes back at full level. The button reads <b>KEEP</b> while a clear is running, and Orbits counts the seconds down.
+      <br>It is also simply the right shape for the last gesture of a piece.</div></div>
+  </div>
+</section>
+
+<!-- ============================ LOOP ============================ -->
+<section id="loop-page">
+  <div class="eyebrow">Screen — page 3 of 5</div>
+  <h2 class="sh">Loop</h2>
+  <p>One page for all six. <b>LOOP</b> chooses which one the other seven
+  controls are editing, and everything on the page changes to that loop when
+  you turn it. The top row is the take — which one, hear it, bound it. The
+  bottom row is the time it keeps.</p>
+  <div class="device" id="loopDevice"></div>
+
+  <div class="flist">
+    <div class="frow"><div><div class="fn">LOOP</div></div>
+      <div class="fd">Which loop you are editing, 1 to 6. Four detents per loop, the same feel as every other selector on the device — a six-position control at one detent each would fly past its own range on a flick.</div></div>
+    <div class="frow"><div><div class="fn">TRIG</div></div>
+      <div class="fd">Plays the window once, right now, ignoring the loop's tempo entirely. Purely for hearing what you caught. It works whether or not the ensemble is running.</div></div>
+    <div class="frow"><div><div class="fn">START</div></div>
+      <div class="fd">Where the window begins inside the take, from its head at 0% to its tail at 100%. Nothing is erased — move it back and what you cut returns.</div></div>
+    <div class="frow"><div><div class="fn">END</div></div>
+      <div class="fd">Not a second position but a <b>length measured from START</b>, and it goes both ways.
+      <br>Centre is a window of nothing. Turn <b>right</b> and the window grows forward from START until it reaches the end of the take. Turn <b>left</b> and it grows <i>backward</i> from START — <b>played in reverse</b>, reaching the head of the take at the extreme.
+      <br>So the two halves are mirror images about a silent centre, and the left half reaches material the right half never can. Put START at 100% and END hard left and you have the whole take, backwards.</div></div>
+    <div class="frow"><div><div class="fn">BPM</div></div>
+      <div class="fd">This loop's own tempo, in whole numbers. Normally written by BASE and SPRD, but you can override any single loop here — five in a slow drift and one deliberately at half speed, say. Whole numbers matter: see <a href="#drift">the drift</a>.</div></div>
+    <div class="frow"><div><div class="fn">BEAT</div></div>
+      <div class="fd">How many beats long the loop is, 1 to 16. With BPM this gives the period: at 100&nbsp;BPM, BEAT 4 is a loop of 2.4 seconds.
+      <br>This is the knob that decides whether the piece breathes or flutters. At BEAT 1 every loop is a six-hundred-millisecond stutter; at BEAT 8 they are phrases. It also scales the whole arc — doubling BEAT doubles the time until everything comes back together.</div></div>
+    <div class="frow"><div><div class="fn">FIT</div></div>
+      <div class="fd">What happens when the window does not equal the beat it has been given, which is nearly always. Three ways, each followed by a faded companion.
+      <br><b>PAD</b> plays the window and then goes quiet until the loop restarts — and cuts the window off early if it is longer than the beat. <b>SPD</b> plays the window faster or slower so it exactly fills the beat: no gap, and the pitch moves. <b>RPT</b> repeats the window as many times as it takes to fill.
+      <br><b>PADF</b>, <b>SPDF</b> and <b>RPTF</b> are the same three with a short fade at each end of the window, so the seam cannot click. The plain three keep the click on purpose — a hard splice is a percussive event, and tape music is full of them.</div></div>
+    <div class="frow"><div><div class="fn">PHAS</div></div>
+      <div class="fd">Nudges this loop within its own cycle, half a cycle either way. Everything else here is set-and-wait; this is the hands-on one. Rather than waiting four minutes for loop 2 to drift into line with loop 1, you push it there.
+      <br>It <b>slides</b> rather than jumps: the loop runs up to a quarter faster or slower until it arrives, so you hear it being pulled into place. That is what a performer physically does to a tape loop, and what Reich's players do to pull <i>Piano Phase</i> apart.</div></div>
+  </div>
+</section>
+
+<!-- ============================ MIX ============================ -->
+<section id="mix-page">
+  <div class="eyebrow">Screen — page 4 of 5</div>
+  <h2 class="sh">Mix</h2>
+  <p>Every level in the module on one page: the six loops in their usual
+  block, and the two that are not loops in the right-hand column.</p>
+  <div class="device" id="mixDevice"></div>
+
+  <div class="flist">
+    <div class="frow"><div><div class="fn">1–6</div></div>
+      <div class="fd">One fader per loop, up to <b>200%</b>, defaulting to 80% so unity sits comfortably inside the travel. Six quiet takes summed can need lifting, and a loop pushed past unity into the soft clipper is a usable sound rather than an accident. Bringing loops in and out here is most of how the piece is performed.</div></div>
+    <div class="frow"><div><div class="fn">DRY</div></div>
+      <div class="fd">How much of the live input passes straight through, defaulting to full. Not a dry/wet crossfade — the loops have their own levels — so at 100% you hear yourself playing <i>and</i> the loops. Turn it down to leave the ensemble playing alone.</div></div>
+    <div class="frow"><div><div class="fn">OUT</div></div>
+      <div class="fd">The level of the whole ensemble against your live signal. Kept off the dry path deliberately: with nothing recorded, the module passes audio through untouched, bit for bit.</div></div>
+  </div>
+</section>
+
+<!-- ============================ ORBITS ============================ -->
+<section id="orbits-page">
+  <div class="eyebrow">Screen — page 5 of 5</div>
+  <h2 class="sh">Orbits</h2>
+  <p>The page that makes the drift legible. Six readouts, one per loop, saying
+  where each one is in its own cycle — and one number saying when they will all
+  be together again.</p>
+  <div class="device" id="orbitsDevice"></div>
+
+  <div class="flist">
+    <div class="frow"><div><div class="fn">1–6</div></div>
+      <div class="fd">Where that loop is in its cycle, as a percentage. Six numbers climbing at six different rates is the whole instrument in one glance: identical when you press PLAY, scattered a minute later, together again at the end.
+      <br>It also reports what the loop is doing, because a record button cannot: a dash for empty, <b>REC</b> while recording, <b>S</b> for a take sitting stopped, and <b>O42</b> for a loop being overdubbed at 42% through.</div></div>
+    <div class="frow"><div><div class="fn">ALIGN</div></div>
+      <div class="fd">Seconds until every loaded loop comes back into line, counting down. It is exact, not an estimate — see <a href="#drift">below</a>. Past ten minutes it switches to minutes, so <b>12M</b> means twelve.
+      <br>It assumes you have not retuned anything since the last alignment. Turn a BPM or a BEAT and the loops no longer share the instant it counts from, so the figure jumps to describe the new arrangement; RSYN makes it true again.
+      <br>While a CLEAR is running, this cell counts that down instead.</div></div>
+  </div>
+</section>
+
+<!-- ============================ THE DRIFT ============================ -->
+<section id="drift">
+  <div class="eyebrow">How the drift works</div>
+  <h2 class="sh">Whole numbers, and why they matter</h2>
+  <div class="cols">
+    <div>
+      <p>A loop at 100&nbsp;BPM and four beats long is 2.400 seconds. The same
+      loop at 101 is 2.376. Twenty-four milliseconds shorter — a flam, the
+      first time round. Ten times round it is a quarter of a second. Fifty
+      times round they are exactly opposed. And at a hundred times round, the
+      101 loop has completed <i>exactly one extra lap</i> and they are together
+      again.</p>
+      <p>That is the whole mechanism. Two tempi, <i>p</i> and <i>q</i>: in the
+      time the first plays <i>p</i> cycles the second plays <i>q</i>. Cancel
+      any common factor first — 100 against 105 is really 20 against 21, and
+      comes back in under a minute.</p>
+    </div>
+    <div>
+      <p>So the <b>relationship</b> between the numbers matters far more than
+      the numbers. 100 against 101 is a four-minute breath. 100 against 150 is
+      two-against-three — a groove, not a drift. And 100 against 100.37 is
+      neither: it never resolves into anything, which is why every tempo here
+      snaps to a whole number.</p>
+      <p>With six running, every pair has its own return time and they surface
+      and dissolve against each other continuously.</p>
+    </div>
+  </div>
+  <div class="note"><b>Six loops all at BEAT 4 come back together every four
+  minutes — at any whole tempi at all.</b> Not just 100–105: any six. In four
+  minutes each loop completes exactly its own BPM count of cycles, so they all
+  arrive at once. Change one loop's BEAT and the figure moves: 3 against 4
+  needs twelve beats, so twelve minutes. ALIGN does this arithmetic for you.</div>
+</section>
+
+<!-- ============================ IDEAS ============================ -->
+<section id="ideas">
+  <div class="eyebrow">Ways to use it</div>
+  <h2 class="sh">What to actually do with it</h2>
+  <p>A few starting points — all of them just combinations of the controls
+  above.</p>
+  <div class="flist">
+    <div class="frow"><div><div class="fn">The canonical one</div></div>
+      <div class="fd">Record the <i>same</i> short phrase into all six, one after another. Leave SPREAD at 1 and press PLAY. They start as one thick voice and separate into six over the next few minutes, then gather back up. This is <i>Come Out</i> with five extra voices, and it is the thing the module was built to do.</div></div>
+    <div class="frow"><div><div class="fn">Lock it, then let it go</div></div>
+      <div class="fd">Turn SPREAD to 0 before you press PLAY. All six loops are the same length, so they stay welded together — a rhythmic stack that never moves. Play over it for as long as you like, then turn SPREAD to 1 and listen to the stack come apart in real time. Turning it back to 0 freezes it wherever it got to.</div></div>
+    <div class="frow"><div><div class="fn">One long, five short</div></div>
+      <div class="fd">Give five loops BEAT 1 and one loop BEAT 16. The five flutter against each other while the sixth takes sixteen times as long to say anything — a slow melody with a shimmering floor under it that never repeats the same way twice.</div></div>
+    <div class="frow"><div><div class="fn">Rests as rhythm</div></div>
+      <div class="fd">Record six very short things — a stick, a click, a single note — and leave FIT on PAD with a long BEAT. Each loop is now one hit and a long silence, and because the silences are different lengths the pattern of hits never repeats. This is where padding stops being a compromise and becomes the point.</div></div>
+    <div class="frow"><div><div class="fn">Three forwards, three back</div></div>
+      <div class="fd">Set START near the end on three of the loops and turn END hard left, so they play backwards. Reversed material drifting against forward material gives you something that sounds composed and is not.</div></div>
+    <div class="frow"><div><div class="fn">Pull one into line by hand</div></div>
+      <div class="fd">Watch Orbits until two numbers are close, then use PHAS on one of them to slide it the rest of the way. You will hear the loop run fast for a moment as it catches up. Hold two in unison by hand while the other four keep drifting.</div></div>
+    <div class="frow"><div><div class="fn">Overdub onto a moving target</div></div>
+      <div class="fd">Press REC on a loop that is already playing to start overdubbing, and add a second layer while it drifts. Because it is drifting, the new layer lands at a different point in its cycle relative to everything else — you are playing along with something that will not be there next time round.</div></div>
+    <div class="frow"><div><div class="fn">Arrange around the four minutes</div></div>
+      <div class="fd">Leave every loop at BEAT 4 and watch ALIGN. The whole ensemble returns to unison every 240 seconds, exactly. Bring loops in and out with the faders so that the return lands on a full mix — a four-minute structure you did not have to write.</div></div>
+    <div class="frow"><div><div class="fn">Let it end itself</div></div>
+      <div class="fd">Press CLEAR and leave it. Fifteen seconds of the whole thing receding, then silence and an empty module ready for the next one. It is the only control here that is also an ending.</div></div>
+  </div>
+</section>
+
+<footer>
+  WAYWARD · v0.8.1 · audio_fx · by <a href="https://github.com/kliegsablaze">kliegs</a><br>
+  Built on <a href="https://github.com/charlesvestal/schwung">schwung</a> by Charles Vestal, for the Ableton Move.<br>
+  Sibling to <a href="https://github.com/kliegsablaze/forgetful">Forgetful</a>, which took one input into four memories that decay.
+</footer>
+
+</div><!-- /wrap -->
+
+<script>
+"use strict";
+
+/* ============================================================
+   Reconstructed Move display: 128x64, 1-bit.
+   Drawn at logical resolution, then thresholded to solid on/off
+   pixels so it reads like a real monochrome panel rather than an
+   anti-aliased canvas drawing.
+   ============================================================ */
+const SCR_W=128, SCR_H=64;
+const ACCENT=[0x6e,0xa8,0xe8];
+
+/* ------------------------------------------------------------------
+   The display font. Proportional, five rows tall, one blank column
+   between glyphs; each entry is its columns, LSB = top row. Most
+   letters are four columns, M and W are five, I is one, T is three.
+   Read straight off the hardware rather than approximated with a
+   webfont — a 5px webfont glyph is mostly anti-aliasing, and
+   thresholding anti-aliasing to one bit is what turned the first pass
+   of these screens into mush.
+   ------------------------------------------------------------------ */
+const FONT={
+  " ":[0,0],
+  "A":[0x1E,0x05,0x05,0x1E], "B":[0x1F,0x15,0x15,0x0A], "C":[0x0E,0x11,0x11,0x11],
+  "D":[0x1F,0x11,0x11,0x0E], "E":[0x1F,0x15,0x15,0x11], "F":[0x1F,0x05,0x05,0x01],
+  "G":[0x0E,0x11,0x15,0x1D], "H":[0x1F,0x04,0x04,0x1F], "I":[0x1F],
+  "J":[0x08,0x10,0x11,0x0F], "K":[0x1F,0x04,0x0A,0x11], "L":[0x1F,0x10,0x10,0x10],
+  "M":[0x1F,0x02,0x04,0x02,0x1F], "N":[0x1F,0x02,0x04,0x1F], "O":[0x0E,0x11,0x11,0x0E],
+  "P":[0x1F,0x05,0x05,0x02], "Q":[0x0E,0x11,0x11,0x1E], "R":[0x1F,0x05,0x0D,0x12],
+  "S":[0x12,0x15,0x15,0x09], "T":[0x01,0x1F,0x01], "U":[0x0F,0x10,0x10,0x0F],
+  "V":[0x07,0x08,0x10,0x08,0x07], "W":[0x0F,0x10,0x0C,0x10,0x0F], "X":[0x1B,0x04,0x04,0x1B],
+  "Y":[0x01,0x02,0x1C,0x02,0x01], "Z":[0x19,0x15,0x15,0x13],
+  "0":[0x0E,0x11,0x11,0x0E], "1":[0x12,0x1F,0x10], "2":[0x19,0x15,0x15,0x12],
+  "3":[0x11,0x15,0x15,0x0A], "4":[0x07,0x04,0x04,0x1F], "5":[0x17,0x15,0x15,0x09],
+  "6":[0x0E,0x15,0x15,0x09], "7":[0x01,0x19,0x05,0x03], "8":[0x0A,0x15,0x15,0x0A],
+  "9":[0x12,0x15,0x15,0x0E],
+  "-":[0x04,0x04,0x04], ".":[0x10], ":":[0x0A], "!":[0x17], "?":[0x01,0x15,0x05,0x03],
+  "%":[0x19,0x04,0x04,0x13], "/":[0x18,0x04,0x03], "+":[0x04,0x0E,0x04],
+  ">":[0x11,0x0A,0x04], "<":[0x04,0x0A,0x11]
+};
+const CH_H=5;
+function glyph(c){ return FONT[c]||FONT["?"]; }
+function tw(str){
+  str=String(str).toUpperCase(); let n=0;
+  for(let i=0;i<str.length;i++) n+=glyph(str[i]).length+1;
+  return n?n-1:0;
+}
+function text(ctx,str,x,y){
+  str=String(str).toUpperCase(); x=Math.round(x); y=Math.round(y);
+  for(let i=0;i<str.length;i++){
+    const g=glyph(str[i]);
+    for(let c=0;c<g.length;c++){
+      for(let r=0;r<CH_H;r++) if((g[c]>>r)&1) ctx.fillRect(x+c,y+r,1,1);
+    }
+    x+=g.length+1;
+  }
+}
+function textC(ctx,str,cx,y){ text(ctx,str,Math.round(cx-tw(str)/2),y); }
+function textR(ctx,str,rx,y){ text(ctx,str,rx-tw(str),y); }
+
+/* Single pixels, so a one-pixel outline really is one pixel wide after
+   the threshold instead of a two-pixel anti-aliased smear. */
+function px(ctx,x,y){ ctx.fillRect(Math.round(x),Math.round(y),1,1); }
+function run(ctx,x0,x1,y){ ctx.fillRect(Math.round(x0),Math.round(y),Math.round(x1-x0)+1,1); }
+function pxLine(ctx,x0,y0,x1,y1){
+  x0=Math.round(x0); y0=Math.round(y0); x1=Math.round(x1); y1=Math.round(y1);
+  const dx=Math.abs(x1-x0), sx=x0<x1?1:-1, dy=-Math.abs(y1-y0), sy=y0<y1?1:-1;
+  let err=dx+dy;
+  for(;;){
+    px(ctx,x0,y0);
+    if(x0===x1&&y0===y1) break;
+    const e2=2*err;
+    if(e2>=dy){ err+=dy; x0+=sx; }
+    if(e2<=dx){ err+=dx; y0+=sy; }
+  }
+}
+
+const COL_W=32, ROW_Y=[8,31], FOOT_Y=55;
+
+/* A continuous value: a midpoint-circle ring of radius 8 with the
+   bottom 90 degrees left open, and a needle pivoting at its centre.
+   Zero is at the open corner on the left, full at the one on the right. */
+function drawDial(ctx,cx,cy,f){
+  const r=8;
+  let x=r,y=0,err=1-r;
+  const put=(dx,dy)=>{ if(dy<=5) px(ctx,cx+dx,cy+dy); };
+  while(x>=y){
+    put(x,y); put(y,x); put(-y,x); put(-x,y);
+    put(-x,-y); put(-y,-x); put(y,-x); put(x,-y);
+    y++; if(err<0){ err+=2*y+1; } else { x--; err+=2*(y-x)+1; }
+  }
+  const rad=(135+Math.max(0,Math.min(1,f))*270)*Math.PI/180;
+  pxLine(ctx,cx,cy,cx+Math.cos(rad)*7.2,cy+Math.sin(rad)*7.2);
+}
+
+/* A trigger: a cylinder. Two ellipses of the same profile — the top one
+   drawn whole, the bottom one only where it shows below the body —
+   joined by two walls. Touch it and the top fills, with a small burst
+   at the base. */
+const CYL_W=[7,7,6,3];               /* half-width by |dy| */
+function cylRow(ctx,cx,cy,dy,fill){
+  const o=CYL_W[Math.abs(dy)]; if(o===undefined) return;
+  if(fill){ run(ctx,cx-o,cx+o,cy+dy); return; }
+  const nx=CYL_W[Math.abs(dy)+1];
+  const i=nx===undefined?0:Math.min(nx+1,o);
+  run(ctx,cx+i,cx+o,cy+dy); run(ctx,cx-o,cx-i,cy+dy);
+}
+function drawTrigger(ctx,cx,y,selected){
+  const top=y+6, bot=y+12;
+  if(selected){
+    for(let dy=-3;dy<=0;dy++) cylRow(ctx,cx,top,dy,true);
+    ctx.fillRect(cx-7,top+1,15,2);
+    cylRow(ctx,cx,top,3,false);
+  } else {
+    for(let dy=-3;dy<=3;dy++) cylRow(ctx,cx,top,dy,false);
+  }
+  for(let yy=top;yy<=bot;yy++){ px(ctx,cx-7,yy); px(ctx,cx+7,yy); }
+  for(let dy=1;dy<=3;dy++) cylRow(ctx,cx,bot,dy,false);
+  if(selected){
+    px(ctx,cx-8,y+11); px(ctx,cx+8,y+11);
+    px(ctx,cx-9,y+12); px(ctx,cx+9,y+12);
+    px(ctx,cx,y+13);   px(ctx,cx,y+14);
+  }
+}
+
+/* An enum: one bordered box, the same size everywhere, holding a single
+   centred line — or two stacked, which nothing uses now that ECHO's four
+   characters fit on one. */
+function drawBox(ctx,x,y,val){
+  const w=20,h=15, lines=Array.isArray(val)?val:[val];
+  run(ctx,x,x+w-1,y); run(ctx,x,x+w-1,y+h-1);
+  for(let i=0;i<h;i++){ px(ctx,x,y+i); px(ctx,x+w-1,y+i); }
+  const top = lines.length>1 ? y+2 : y+5;
+  lines.forEach((s,i)=>textC(ctx,s,x+w/2-0.5,top+i*6));
+}
+
+function drawDevice(ctx, s){
+  ctx.clearRect(0,0,SCR_W,SCR_H);
+  ctx.fillStyle="#fff";
+
+  /* Rows 0-6 are the title, or — while a knob is touched — an inverted
+     band carrying that knob's full name and its live value. */
+  if(s.touchedLabel){
+    ctx.fillRect(0,0,SCR_W,7);
+    ctx.clearRect(0,0,1,1); ctx.clearRect(SCR_W-1,0,1,1);   /* notched corners */
+    ctx.save(); ctx.globalCompositeOperation="destination-out";
+    text(ctx,s.touchedLabel,2,1);
+    textR(ctx,s.touchedValue,126,1);
+    ctx.restore();
+  } else {
+    textR(ctx,s.title,126,1);
+  }
+
+  /* Rows 7-8 are the page bar: one segment per page, the current one
+     two pixels deep instead of one. */
+  const n=Math.max(1,s.pageCount||1);
+  ctx.fillRect(0,7,SCR_W,1);
+  for(let i=1;i<n;i++){ ctx.clearRect(Math.round(i*SCR_W/n)-1,7,1,1); }
+  const a=Math.round((s.pageIndex||0)*SCR_W/n), b=Math.round(((s.pageIndex||0)+1)*SCR_W/n)-2;
+  ctx.fillRect(a,8,b-a+1,1);
+
+  s.cells.forEach((cell,i)=>{
+    /* A load-bearing blank: "" in the module's knobs[] is real grid space,
+       not a missing control. Nothing is drawn and nothing is labelled. */
+    if(cell.kind==="blank") return;
+    const x=(i%4)*COL_W, y=ROW_Y[i<4?0:1], sel=i===s.touchedIndex;
+    if(cell.kind==="dial")         drawDial(ctx,x+15,y+10,cell.value.f);
+    else if(cell.kind==="trigger") drawTrigger(ctx,x+16,y,sel);
+    else                           drawBox(ctx,x+6,y+2,cell.value);
+
+    if(sel){                       /* the touched knob wears four marks */
+      px(ctx,x+8,y+1); px(ctx,x+24,y+1);
+      run(ctx,x+3,x+5,y+6); run(ctx,x+27,x+29,y+6);
+    }
+    const label=sel?(cell.label||""):(cell.label||"").slice(0,5);
+    if(sel){
+      ctx.fillRect(x,y+17,COL_W,7);
+      ctx.save(); ctx.globalCompositeOperation="destination-out";
+      textC(ctx,label,x+15.5,y+18);
+      ctx.restore();
+    } else {
+      textC(ctx,label,x+15.5,y+18);
+    }
+  });
+
+  /* Footer: a full-width rule, then alternating pill / plain hints. The
+     last one reads FIRE rather than MENU while a trigger is touched,
+     because that is what a jog-click would then do. */
+  ctx.fillRect(0,FOOT_Y,SCR_W,1);
+  const hints=[["JOG",1],["PAGE",0],["CLK",1],[s.touchedIsTrigger?"FIRE":"MENU",0]];
+  let hx=1;
+  hints.forEach(([label,pill])=>{
+    const w=tw(label);
+    if(pill){
+      ctx.fillRect(hx,FOOT_Y+1,w+4,7);
+      ctx.save(); ctx.globalCompositeOperation="destination-out";
+      text(ctx,label,hx+2,FOOT_Y+2);
+      ctx.restore();
+      hx+=w+6;
+    } else {
+      text(ctx,label,hx,FOOT_Y+2);
+      hx+=w+4;
+    }
+  });
+
+  threshold(ctx);
+}
+
+function threshold(ctx){
+  const img=ctx.getImageData(0,0,SCR_W,SCR_H), d=img.data;
+  for(let i=0;i<d.length;i+=4){
+    if(d[i+3]>128){ d[i]=ACCENT[0]; d[i+1]=ACCENT[1]; d[i+2]=ACCENT[2]; d[i+3]=255; }
+    else { d[i+3]=0; }
+  }
+  ctx.putImageData(img,0,0);
+}
+
+/* Builds one interactive device screen inside `mount`.
+   cell.kind: "dial" (values are {t,f} — display text + 0..1 fraction),
+   "box" / "box2" (enum — values are a string, or a pair joined into one),
+   "trigger" (values are the header text it cycles through; the resting
+   cell never shows them, only a fixed glyph — exactly like the real
+   device never shows a trigger's live value except in the touched header). */
+function buildDevice(mount, page){
+  mount.innerHTML =
+    '<div class="screen-frame"><div class="hitgrid">'+
+      '<canvas class="screen" width="'+SCR_W+'" height="'+SCR_H+'"></canvas>'+
+    '</div></div>'+
+    '<div class="device-cap">Click a control to see what it does</div>'+
+    '<div class="inspect"><div class="it" id="'+page.id+'-it">— tap a control —</div><div class="id" id="'+page.id+'-id">'+page.hint+'</div></div>';
+
+  const canvas=mount.querySelector("canvas"), ctx=canvas.getContext("2d");
+  const hitgrid=mount.querySelector(".hitgrid");
+  const itEl=document.getElementById(page.id+"-it"), idEl=document.getElementById(page.id+"-id");
+
+  function headerValue(cell,v){
+    if(cell.kind==="dial") return v.t;
+    if(cell.kind==="box2") return v.join("");
+    return v; /* box or trigger */
+  }
+
+  page.cells.forEach((cell,i)=>{
+    if(cell.kind==="blank") return;   /* nothing to click */
+    const col=i%4, row=i<4?0:1;
+    const b=document.createElement("button");
+    b.className="hit"; b.type="button";
+    b.style.left=(col*25)+"%"; b.style.width="25%";
+    b.style.top=(row===0?"12.5%":"48.4%"); b.style.height="34.4%";
+    b.setAttribute("aria-label",cell.label+" — knob "+(i+1));
+    b.onclick=()=>{
+      cell.idx=(cell.idx+1)%cell.values.length;
+      const v=cell.values[cell.idx];
+      itEl.textContent=cell.label+" — knob "+(i+1);
+      idEl.textContent=cell.desc(v);
+      render({touched:i});
+    };
+    hitgrid.appendChild(b);
+  });
+
+  function render(opts){
+    const ti = opts && typeof opts.touched==="number" ? opts.touched : -1;
+    const tc = ti>=0 ? page.cells[ti] : null;
+    drawDevice(ctx,{
+      title:page.title,
+      pageIndex:page.pageIndex||0, pageCount:page.pageCount||5,
+      touchedIndex: ti,
+      touchedLabel: tc && tc.label.toUpperCase(),
+      touchedValue: tc && headerValue(tc, tc.values[tc.idx]),
+      touchedIsTrigger: !!(tc && tc.kind==="trigger"),
+      cells: page.cells.map(c=>({label:c.label,kind:c.kind,value:c.values[c.idx]}))
+    });
+  }
+  render();
+}
+
+/* ---------------- Main ---------------- */
+const RECV=["REC","STOP","DUB","PLAY"];
+const recCell=(n)=>({label:"REC "+n,kind:"trigger",idx:0,values:RECV,
+  desc:v=>"REC "+n+" — names what the next press does, and reads "+v+" now. "+
+    (v==="REC"?"Loop "+n+" is empty; pressing starts recording.":
+     v==="STOP"?"Loop "+n+" is recording; pressing closes the take and it starts looping.":
+     v==="DUB"?"Loop "+n+" is playing; pressing starts an overdub onto it.":
+               "Loop "+n+" is overdubbing; pressing stops that and leaves it playing.")});
+
+buildDevice(document.getElementById("mainDevice"),{
+  id:"main", title:"Main", pageIndex:0, pageCount:5,
+  hint:"Six record buttons in a block, the transport in the right-hand column.",
+  cells:[
+    recCell(1), recCell(2), recCell(3),
+    {label:"PLAY",kind:"trigger",idx:0,values:["PLAY","STOP"],
+      desc:v=>v==="PLAY"?"PLAY — the ensemble is stopped. Pressing starts all six at the same instant, from the top of their cycles.":"PLAY — the ensemble is running. Pressing stops it."},
+    recCell(4), recCell(5), recCell(6),
+    {label:"RSYN",kind:"trigger",idx:0,values:["SYNC"],
+      desc:v=>"RESYNC — re-aligns every loop without stopping. Whatever has drifted apart snaps back together and immediately starts sliding again."},
+  ]
+});
+
+/* ---------------- Shape ---------------- */
+buildDevice(document.getElementById("shapeDevice"),{
+  id:"shape", title:"Shape", pageIndex:1, pageCount:5,
+  hint:"Where the ensemble sits, how fast it comes apart, how wide — and the one control that throws it away.",
+  cells:[
+    {label:"BASE",kind:"dial",idx:0,values:[{t:"100",f:.375},{t:"60",f:.125},{t:"140",f:.625}],
+      desc:v=>"BASE — the reference tempo, "+v.t+" BPM. On its own it does nothing; SPRD fans the six loops out from it."},
+    {label:"SPRD",kind:"dial",idx:0,values:[{t:"1",f:.54},{t:"0",f:.5},{t:"5",f:.71},{t:"-2",f:.42}],
+      desc:v=>v.t==="0"?"SPREAD at 0 — all six loops are the same length and stay locked together forever. A rhythmic stack that never moves.":
+        "SPREAD at "+v.t+" — loop n runs at BASE + n x "+v.t+". "+(v.t==="1"?"100 through 105: minutes to separate and return.":v.t==="5"?"Wide enough that the relationships read as polyrhythm rather than drift.":"Fanned downward from BASE instead of up.")},
+    {label:"WIDEN",kind:"dial",idx:0,values:[{t:"50%",f:.5},{t:"0%",f:0},{t:"100%",f:1}],
+      desc:v=>v.t==="0%"?"WIDEN at 0 — all six centred. Six loops phasing in mono turn to mud.":"WIDEN at "+v.t+" — the six fanned across the stereo field, so they read as separate voices you can follow one at a time."},
+    {label:"",kind:"blank",idx:0,values:[""],desc:v=>""},
+    {label:"",kind:"blank",idx:0,values:[""],desc:v=>""},
+    {label:"",kind:"blank",idx:0,values:[""],desc:v=>""},
+    {label:"",kind:"blank",idx:0,values:[""],desc:v=>""},
+    {label:"CLEAR",kind:"trigger",idx:0,values:["CLR","KEEP"],
+      desc:v=>v==="CLR"?"CLEAR — erases all six takes and resets everything, over a fifteen-second fade. The fade is the confirmation.":"CLEAR is running: the ensemble is fading out. Pressing again calls it off and everything returns at full level. Orbits is counting the seconds down."},
+  ]
+});
+
+/* ---------------- Loop ---------------- */
+buildDevice(document.getElementById("loopDevice"),{
+  id:"loop", title:"Loop", pageIndex:2, pageCount:5,
+  hint:"LOOP chooses which of the six the other seven controls are editing.",
+  cells:[
+    {label:"LOOP",kind:"dial",idx:0,values:[{t:"1",f:0},{t:"3",f:.4},{t:"6",f:1}],
+      desc:v=>"LOOP — the other seven controls are editing loop "+v.t+". Turn it and they all change to that loop's settings. Four detents per loop."},
+    {label:"TRIG",kind:"trigger",idx:0,values:["PLAY"],
+      desc:v=>"TRIG — plays the window once, right now, ignoring the loop's tempo. For hearing what you caught. Works whether or not the ensemble is running."},
+    {label:"START",kind:"dial",idx:0,values:[{t:"0%",f:0},{t:"25%",f:.25},{t:"100%",f:1}],
+      desc:v=>"START at "+v.t+" — where the window begins inside the take. Nothing is erased; move it back and what you cut returns."},
+    {label:"END",kind:"dial",idx:0,values:[{t:"+100%",f:1},{t:"+40%",f:.7},{t:"0%",f:.5},{t:"-100%",f:0}],
+      desc:v=>v.t==="0%"?"END at centre — a window of zero length. This loop is silent.":
+        (v.t.charAt(0)==="+"?"END at "+v.t+" — the window grows FORWARD from START, reaching the end of the take at +100%.":
+         "END at "+v.t+" — the window grows BACKWARD from START and plays in REVERSE, reaching the head of the take at -100%.")},
+    {label:"BPM",kind:"dial",idx:0,values:[{t:"100",f:.375},{t:"101",f:.381},{t:"150",f:.688}],
+      desc:v=>"BPM — this loop keeps "+v.t+". Whole numbers only: 100 against 101 is a four-minute breath, 100 against 150 is two-against-three and reads as a groove."},
+    {label:"BEAT",kind:"dial",idx:0,values:[{t:"4",f:.2},{t:"1",f:0},{t:"8",f:.47},{t:"16",f:1}],
+      desc:v=>"BEAT — this loop is "+v.t+" beat"+(v.t==="1"?"":"s")+" long. At 100 BPM that is "+(Number(v.t)*0.6).toFixed(1)+" seconds. Short is a stutter; long is a phrase, and it stretches the whole drift arc with it."},
+    {label:"FIT",kind:"box",idx:0,values:["PAD","PADF","SPD","SPDF","RPT","RPTF"],
+      desc:v=>({PAD:"FIT PAD — play the window, then silence until the loop restarts. If the window is longer than the beat, it is cut off at the wrap.",
+        PADF:"FIT PADF — PAD with a short fade at each end of the window, so the seam cannot click.",
+        SPD:"FIT SPD — varispeed. The window is played faster or slower so it exactly fills the beat: no gap, and the pitch moves.",
+        SPDF:"FIT SPDF — SPD with the ends faded.",
+        RPT:"FIT RPT — the window repeats as many times as it takes to fill the beat.",
+        RPTF:"FIT RPTF — RPT with each repeat faded, so the seams do not click."})[v]},
+    {label:"PHAS",kind:"dial",idx:0,values:[{t:"0%",f:.5},{t:"+25%",f:.75},{t:"-40%",f:.1}],
+      desc:v=>v.t==="0%"?"PHAS at centre — this loop sits where the drift has put it.":"PHAS at "+v.t+" — this loop is nudged that far through its own cycle. It SLIDES there, running up to a quarter fast or slow until it arrives, so you hear it being pulled into place."},
+  ]
+});
+
+/* ---------------- Mix ---------------- */
+const volCell=(n,vals)=>({label:String(n),kind:"dial",idx:0,values:vals,
+  desc:v=>"Loop "+n+" at "+v.t+". Faders reach 200%, so a quiet take can be pushed as well as pulled back."});
+buildDevice(document.getElementById("mixDevice"),{
+  id:"mix", title:"Mix", pageIndex:3, pageCount:5,
+  hint:"Every level in the module: the six loops, the live input, and what leaves.",
+  cells:[
+    volCell(1,[{t:"80%",f:.4},{t:"200%",f:1},{t:"0%",f:0}]),
+    volCell(2,[{t:"80%",f:.4},{t:"120%",f:.6}]),
+    volCell(3,[{t:"80%",f:.4},{t:"35%",f:.17}]),
+    {label:"DRY",kind:"dial",idx:0,values:[{t:"100%",f:1},{t:"0%",f:0},{t:"45%",f:.45}],
+      desc:v=>v.t==="0%"?"DRY at 0 — you hear only the loops. The live input is muted.":"DRY at "+v.t+" — how much of the live input passes straight through. Not a crossfade: the loops keep their own levels, so at 100% you hear yourself AND them."},
+    volCell(4,[{t:"80%",f:.4},{t:"0%",f:0}]),
+    volCell(5,[{t:"80%",f:.4},{t:"160%",f:.8}]),
+    volCell(6,[{t:"80%",f:.4},{t:"60%",f:.3}]),
+    {label:"OUT",kind:"dial",idx:0,values:[{t:"80%",f:.8},{t:"100%",f:1},{t:"0%",f:0}],
+      desc:v=>"OUT at "+v.t+" — the level of the whole ensemble. Kept off the dry path, so with nothing recorded the module passes audio through untouched."},
+  ]
+});
+
+/* ---------------- Orbits ---------------- */
+const cycCell=(n,vals)=>({label:String(n),kind:"box",idx:0,values:vals,
+  desc:v=>v==="-"?"Loop "+n+" — nothing recorded.":
+    v==="REC"?"Loop "+n+" is recording right now. A record button cannot show this; this cell can.":
+    v==="S"?"Loop "+n+" holds a take, and the ensemble is stopped.":
+    v.charAt(0)==="O"?"Loop "+n+" is being overdubbed, "+v.slice(1)+"% through its cycle.":
+    "Loop "+n+" is "+v+"% through its cycle."});
+buildDevice(document.getElementById("orbitsDevice"),{
+  id:"orbits", title:"Orbits", pageIndex:4, pageCount:5,
+  hint:"Six numbers climbing at six different rates — and when they will all be together again.",
+  cells:[
+    cycCell(1,["12","REC","S","-"]),
+    cycCell(2,["31","O44","-"]),
+    cycCell(3,["58","S","-"]),
+    {label:"",kind:"blank",idx:0,values:[""],desc:v=>""},
+    cycCell(4,["73","-"]),
+    cycCell(5,["81","REC","-"]),
+    cycCell(6,["96","-"]),
+    {label:"ALIGN",kind:"box",idx:0,values:["137","240","12M","CLR9","-"],
+      desc:v=>v==="-"?"ALIGN — nothing loaded, or the ensemble is stopped. Nothing to come back into line.":
+        v.charAt(0)==="C"?"ALIGN is counting a CLEAR down instead: "+v.slice(3)+" seconds until everything is erased. Press CLEAR again to call it off.":
+        v.slice(-1)==="M"?"ALIGN — "+v.slice(0,-1)+" minutes until every loaded loop comes back into line. Past ten minutes it counts in minutes.":
+        "ALIGN — "+v+" seconds until every loaded loop comes back into line. Exact arithmetic, not an estimate."},
+  ]
+});
+
+</script>
+</body>
+</html>
