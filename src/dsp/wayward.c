@@ -106,6 +106,30 @@
  * soften a transient audibly. */
 #define FADE_SECONDS     0.005f
 
+/* AUTOMATIC LEADING-SILENCE TRIM.
+ *
+ * A take almost always opens with the moment between pressing REC and
+ * actually playing something, and every frame of it shifts the window, so
+ * START would otherwise have to be dialled in by hand on every recording.
+ * The take therefore begins at its first audible frame rather than its first
+ * frame.
+ *
+ * This is an OFFSET, not a move: nothing is copied. Trimming by memmove
+ * would shift up to 5 MB on the audio thread, several times the 900 us block
+ * budget on its own.
+ *
+ * The threshold is about -60 dBFS, under any room tone worth keeping and
+ * over a converter's noise floor. The pre-roll then backs the origin up 5 ms
+ * from the frame that crossed it, because the crossing happens partway UP an
+ * attack rather than at the start of one — trimming exactly to it shaves the
+ * leading edge off every transient.
+ *
+ * The onset is found DURING recording, one comparison per frame, rather than
+ * by scanning at close: a 30 second take is 1.3 million frames, and scanning
+ * it would blow the block budget in a single call. */
+#define SILENCE_THRESHOLD 32
+#define PREROLL_FRAMES    ((int)(SAMPLE_RATE * 0.005f))
+
 /* An overdub head moving at anything but one frame per frame skips indices;
  * left alone that writes a comb into the take permanently. The gap gets
  * filled, but only up to this many frames — beyond it the head has jumped
@@ -163,7 +187,12 @@ typedef struct {
     frame16_t *buffer;
     int        capacity_frames;
     int        write_head;        /* frames captured so far this take */
-    int        recorded_length;   /* frames in the finished take */
+    int        origin;            /* the take's first frame after the
+                                   * leading-silence trim; every window
+                                   * position is relative to this */
+    int        recorded_length;   /* usable frames, counted from origin */
+    int        lead_idx;          /* first frame over the silence threshold,
+                                   * -1 while nothing has crossed it */
 
     loop_state_t state;
     int overdubbing;   /* LOADED loops only: layering new input onto the take */
@@ -300,7 +329,9 @@ static void init_loop(loop_t *loop) {
     loop->buffer          = NULL;
     loop->capacity_frames = 0;
     loop->write_head      = 0;
+    loop->origin          = 0;
     loop->recorded_length = 0;
+    loop->lead_idx        = -1;
     loop->state           = LOOP_EMPTY;
     loop->overdubbing     = 0;
     loop->start_frac      = 0.0f;
@@ -388,15 +419,31 @@ static int loop_record_text(const loop_t *loop, char *buf, int len) {
 /* ------------------------------------------------------------------ */
 
 static void close_recording(loop_t *loop) {
-    if (loop->write_head < MIN_WINDOW_FRAMES) {
-        /* Too short to be anything. Throw it away rather than keep a click. */
+    /* Where the take really starts, and how much of it is left once the
+     * silence in front of it is skipped. */
+    const int first = loop->lead_idx;
+    int origin = 0, len = 0;
+    if (first >= 0) {
+        origin = first - PREROLL_FRAMES;
+        if (origin < 0) origin = 0;
+        len = loop->write_head - origin;
+    }
+
+    /* Nothing ever crossed the threshold, or what is left is too short to be
+     * anything. Throw it away rather than keep a click — or, worse, a loop
+     * that reads as loaded and plays nothing. */
+    if (first < 0 || len < MIN_WINDOW_FRAMES) {
         loop->write_head      = 0;
+        loop->origin          = 0;
         loop->recorded_length = 0;
+        loop->lead_idx        = -1;
         loop->overdubbing     = 0;
         loop->state           = LOOP_EMPTY;
         return;
     }
-    loop->recorded_length = loop->write_head;
+
+    loop->origin          = origin;
+    loop->recorded_length = len;
     loop->start_frac      = 0.0f;
     loop->end_frac        = 1.0f;   /* the whole take, forwards */
     loop->overdubbing     = 0;
@@ -418,7 +465,9 @@ static void loop_record_press(loop_t *loop) {
         loop->overdubbing = !loop->overdubbing;
     } else {
         loop->write_head      = 0;
+        loop->origin          = 0;
         loop->recorded_length = 0;
+        loop->lead_idx        = -1;
         loop->overdubbing     = 0;
         loop->state           = LOOP_RECORDING;
     }
@@ -508,8 +557,8 @@ static void read_frame(const loop_t *loop, double rp, float *l, float *r) {
     int i1 = i0 + 1;
     if (i1 >= len) i1 = len - 1;
     const float f = (float)(rp - (double)i0);
-    const frame16_t a = loop->buffer[i0];
-    const frame16_t b = loop->buffer[i1];
+    const frame16_t a = loop->buffer[loop->origin + i0];
+    const frame16_t b = loop->buffer[loop->origin + i1];
     *l = ((float)a.l + ((float)b.l - (float)a.l) * f) * (1.0f / 32768.0f);
     *r = ((float)a.r + ((float)b.r - (float)a.r) * f) * (1.0f / 32768.0f);
 }
@@ -517,6 +566,7 @@ static void read_frame(const loop_t *loop, double rp, float *l, float *r) {
 /* Sum new input into the take at one index, saturating. Overdub ADDS — the
  * take is meant to accumulate pass after pass. */
 static void overdub_write(loop_t *loop, int i, int16_t l, int16_t r) {
+    i += loop->origin;   /* window positions are relative to the trim */
     int nl = (int)loop->buffer[i].l + (int)l;
     int nr = (int)loop->buffer[i].r + (int)r;
     if (nl >  32767) nl =  32767;
@@ -613,6 +663,14 @@ static void v2_process_block(void *instance, int16_t *lr, int frames) {
 
             if (lp->state == LOOP_RECORDING) {
                 if (lp->write_head < lp->capacity_frames) {
+                    /* One comparison per frame, so the take learns where it
+                     * really begins without ever having to scan itself. */
+                    if (lp->lead_idx < 0) {
+                        const int al = raw_l < 0 ? -raw_l : raw_l;
+                        const int ar = raw_r < 0 ? -raw_r : raw_r;
+                        if (al > SILENCE_THRESHOLD || ar > SILENCE_THRESHOLD)
+                            lp->lead_idx = lp->write_head;
+                    }
                     lp->buffer[lp->write_head].l = raw_l;
                     lp->buffer[lp->write_head].r = raw_r;
                     lp->write_head++;

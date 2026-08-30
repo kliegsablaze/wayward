@@ -203,6 +203,35 @@ it sits.
 | `loopN_fit` | enum `PAD`/`SPEED`/`RPT` | Below. |
 | `loopN_phase` | float −0.5…+0.5 | Offsets this loop within its own cycle: slide it against the others by hand instead of waiting for it to drift. Slewed ~40 ms so it moves rather than clicks. |
 
+### Leading silence is trimmed on close
+
+A take almost always opens with the moment between pressing REC and actually
+playing something, and every frame of it shifts the window — so without this,
+START would have to be dialled in by hand on every single recording. The take
+therefore begins at its **first audible frame**.
+
+Three decisions inside that:
+
+- **It is an offset, not a move.** `origin` marks where the take starts and
+  every window position is relative to it. Trimming by `memmove` would shift
+  up to 5 MB on the audio thread, several times the 900 µs block budget on its
+  own.
+- **The onset is found while recording**, one comparison per frame, not by
+  scanning at close. A 30 second take is 1.3 million frames; scanning it would
+  blow the budget in a single call.
+- **A 5 ms pre-roll is kept.** The threshold (about −60 dBFS, under any room
+  tone worth keeping and over a converter's noise floor) is crossed partway
+  *up* an attack, not at the start of one. Trimming flush to the crossing
+  shaves the leading edge off every transient.
+
+A recording that never crosses the threshold is discarded rather than kept: a
+loop that reads as loaded and plays nothing is worse than no loop at all.
+
+**Trailing silence is left alone.** It arguably matters more — the take's
+length is what END at +1 spans, so a late stop pads every cycle — but a
+trailing trim has to decide where a decay ends rather than where an attack
+begins, which is a musical judgement rather than a threshold. Left for now.
+
 **BEAT is a float, not an enum**, though the design began with an enum of
 `1,2,3,4,6,8,12,16`. The host learns from `get_param` whether to send enum
 labels or enum indices, so an enum whose labels are bare numbers is genuinely

@@ -850,6 +850,123 @@ int main(void) {
         api->destroy_instance(inst);
     }
 
+
+    /* ---- test 19: leading silence is trimmed automatically ------------- */
+    {
+        void *inst = api->create_instance(NULL, NULL);
+        isolate_loops(api, inst);
+
+        /* Half a second of dead air, then half a second of tone. Recorded
+         * as-is the window would open with silence and START would have to
+         * be dialled in by hand. */
+        const long LEAD = 22050, BODY = 22050;
+        int16_t *mat = (int16_t *)calloc(LEAD + BODY, sizeof(int16_t));
+        for (long i = 0; i < BODY; i++) mat[LEAD + i] = 12000;
+        record_take(api, inst, "loop1", mat, LEAD + BODY);
+
+        for (int L = 2; L <= TEST_NUM_LOOPS; L++) {
+            char key[32];
+            snprintf(key, sizeof(key), "loop%d_volume", L);
+            api->set_param(inst, key, "0");
+        }
+        api->set_param(inst, "loop1_bpm", "60");
+        api->set_param(inst, "loop1_beats", "2");
+        api->set_param(inst, "loop1_fit", "PAD");
+        api->set_param(inst, "master_play", "GO");
+
+        /* The take must start sounding almost at once — inside the pre-roll,
+         * not half a second later. */
+        int16_t blk[FRAMES * 2];
+        long firstSound = -1;
+        for (long done = 0; done < LEAD; done += FRAMES) {
+            memset(blk, 0, sizeof(blk));
+            api->process_block(inst, blk, FRAMES);
+            for (int i = 0; i < FRAMES && firstSound < 0; i++)
+                if (blk[2 * i] != 0) firstSound = done + i;
+            if (firstSound >= 0) break;
+        }
+        check(firstSound >= 0 && firstSound < 400,
+              "test19: the take begins at its first audible frame, not at the\n"
+              "        half second of dead air in front of it");
+
+        /* But NOT trimmed flush to the onset: a few milliseconds of pre-roll
+         * are kept so the leading edge of an attack survives. */
+        check(firstSound > 0,
+              "test19: a short pre-roll is kept ahead of the onset, so a\n"
+              "        transient does not lose its leading edge to the trim");
+
+        free(mat);
+        api->destroy_instance(inst);
+    }
+
+    /* ---- test 20: a take of pure silence is not a take ----------------- */
+    {
+        void *inst = api->create_instance(NULL, NULL);
+        isolate_loops(api, inst);
+
+        const long TAKE = 44100;
+        int16_t *mat = (int16_t *)calloc(TAKE, sizeof(int16_t));
+        record_take(api, inst, "loop1", mat, TAKE);
+
+        api->get_param(inst, "master_state", buf, sizeof(buf));
+        check(buf[0] == '.',
+              "test20: a recording that never crosses the threshold is\n"
+              "        discarded — a loop that reads as loaded and plays\n"
+              "        nothing is worse than no loop at all");
+        api->get_param(inst, "loop1_record", buf, sizeof(buf));
+        check(strcmp(buf, "REC") == 0,
+              "test20: and the button offers REC again, not DUB");
+
+        free(mat);
+        api->destroy_instance(inst);
+    }
+
+    /* ---- test 21: the trim does not disturb the window maths ----------- */
+    {
+        void *inst = api->create_instance(NULL, NULL);
+        isolate_loops(api, inst);
+
+        /* Silence, then a ramp. After trimming, END at +1 must span the ramp
+         * and nothing else — so reversing it must still invert cleanly. */
+        const long LEAD = 11025, BODY = 22050;
+        int16_t *mat = (int16_t *)calloc(LEAD + BODY, sizeof(int16_t));
+        for (long i = 0; i < BODY; i++)
+            mat[LEAD + i] = (int16_t)(2000 + i * 18000 / BODY);
+        record_take(api, inst, "loop1", mat, LEAD + BODY);
+
+        for (int L = 2; L <= TEST_NUM_LOOPS; L++) {
+            char key[32];
+            snprintf(key, sizeof(key), "loop%d_volume", L);
+            api->set_param(inst, key, "0");
+        }
+        api->set_param(inst, "loop1_start", "1");
+        api->set_param(inst, "loop1_end", "-1");
+        api->set_param(inst, "loop1_bpm", "60");
+        api->set_param(inst, "loop1_beats", "2");
+        api->set_param(inst, "loop1_fit", "PAD");
+        api->set_param(inst, "master_play", "GO");
+
+        int16_t blk[FRAMES * 2];
+        int first = -1, last = 0;
+        for (long done = 0; done < BODY; done += FRAMES) {
+            memset(blk, 0, sizeof(blk));
+            api->process_block(inst, blk, FRAMES);
+            for (int i = 0; i < FRAMES; i++) {
+                if (done + i >= BODY) break;
+                if (first < 0) first = blk[2 * i];
+                last = blk[2 * i];
+            }
+        }
+        check(first > 15000,
+              "test21: a reversed full window still starts at the ramp's top,\n"
+              "        so the trim shifted the window rather than confusing it");
+        check(last < 4000,
+              "test21: and ends near its bottom");
+
+        free(mat);
+        api->destroy_instance(inst);
+    }
+
     /* A pass line that prints unconditionally is how a red suite reads
      * green. */
     if (g_failures) {
