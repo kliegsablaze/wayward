@@ -85,19 +85,38 @@ are effectively capped at 5–6 by the cell width.
 
 ```
 PLAY   SYNC   BASE   SPRD
-ENS    RSYN   DRY    ····
+ENS    RSYN   WIDEN  ····
 ```
 
 | key | type | |
 |---|---|---|
-| `master_play` | trigger | Zeroes all six phases at the same frame and runs. That shared moment is what the whole piece drifts away from. Reads `PLAY` / `STOP` — the button names what the *next* press will do. |
+| `master_play` | trigger | Zeroes all six phases at the same frame and runs. That shared moment is what the whole piece drifts away from. Reads `PLAY` / `STOP` — the button names what the *next* press will do, though **only in the header while the knob is held**: see the note below. |
 | `master_sync` | enum `FREE`/`MOVE` | `MOVE` also starts on the host transport and tracks `get_bpm()` as BASE. |
 | `master_base` | float 40–200, step 1 | Reference tempo. |
 | `master_spread` | float −12…+12, step 1 | Loop *i* runs at `base + i × spread`. **0 locks all six in unison**; the return to 0 is the piece's largest gesture. Writes the six per-loop tempi, which stay individually editable afterwards. |
-| `master_ens` | enum, `access:"read"` | Six characters, one per loop: `.` empty, `I` has a take, `O` playing, `R` recording. The glyphs are constrained by the renderer, not chosen for looks — see below. |
+| `master_ens` | enum, `access:"read"` | Six characters, one per loop: `.` empty, `S` has a take but stopped, `P` playing, `O` overdubbing, `R` recording. This is where transport state actually lives — the glyphs are constrained by the renderer, not chosen for looks; see below. |
 | `master_resync` | trigger | Re-zeroes every phase *without* stopping — pull the ensemble back into unison mid-performance. |
-| `master_dry` | float 0–1, `unit:"%"` | The live input's level. Defaults to full: an effect that silences its input is a bug. |
+| `master_widen` | float 0–1, `unit:"%"` | A stereo *spread* control, not a position control. At 0 all six loops sit centred; turning it up fans them progressively across the stereo field. Six loops phasing in mono turn to mud; the same six spread across the image read as voices you can follow individually. Lives on Main because it shapes the ensemble, not the balance. |
 | `""` | | A load-bearing blank cell. |
+
+### Why the transport state is in ENS and not on the button
+
+`drawButton` (`render_page_movy.mjs:1344`) draws the button graphic and
+nothing else, and the renderer says why in its own comment: *"a trigger has no
+state, so nothing else on the screen changes when you click it."* A write-only
+parameter's cell therefore shows the widget plus its **static label**; whatever
+`get_param` returns for it appears only in the header, and only while the knob
+is held.
+
+So `PLAY` on the grid reads `PLAY` whether the ensemble is running or not, and
+`REC` reads `REC` whether or not that loop is recording. Both buttons *do*
+carry a full state vocabulary — that vocabulary is simply for the header.
+
+Making PLAY an ordinary two-option enum would put its state permanently on
+screen at the cost of the button and its press flash. Rejected: ENS is one
+cell away and reports all six loops at once, which is more than a transport
+readout would say. The known gap is that an ensemble with nothing recorded
+reads `......` whether running or stopped.
 
 ### What the ENS readout may contain
 
@@ -107,19 +126,20 @@ choose the glyphs:
 
 1. `-`, `_` and space are **word separators** — `-` whenever it falls between
    two alphanumerics — and the function then keeps only the first three
-   characters of each of the first two words. The design originally used `-`
-   for an empty loop, which meant a mixed state like `OR-O..` would render as
-   `OR` over `O`: characters dropped, and every position after the break
-   shifted, so the readout no longer says *which* loop is which. An all-empty
-   `------` survives by accident, since no hyphen there has an alphanumeric on
-   either side — which is exactly how the bug would have looked correct until
-   the first take was recorded.
+   characters of each of the first two words. An ensemble reading `R-S---` is
+   therefore rewritten to `R S---`, split, and drawn as `R` over `S--`: not a
+   truncated ensemble but a **wrong** one, since characters vanish and every
+   position after the break shifts, so the readout stops saying which loop is
+   which. An all-empty `------` survives by accident, no hyphen there having
+   an alphanumeric on either side — which is exactly how this would have
+   looked correct until the first take was recorded.
 2. The value is uppercased, so a glyph cannot be told apart from its uppercase
    twin.
 3. An all-digit value takes a different path entirely.
 
-Hence `.`, `I`, `O`, `R`: no separator character, no case-only distinction,
-never all digits. If six characters do not fit the interior on one line, the
+Hence `.`, `S`, `P`, `O`, `R`: no separator character, no case-only
+distinction, never all digits. `-` was the wanted glyph for an empty loop and
+is exactly the one that cannot be used. If six characters do not fit the interior on one line, the
 renderer falls back to a blind 3+3 slice, giving loops 1–3 over loops 4–6 with
 every position intact — a legible second-best rather than a wrong reading.
 
@@ -131,13 +151,16 @@ limit on levels, so eight sections is fine. Mix stays its own page.
 
 ```
 1      2      3      4
-5      6      OUT    PAN
+5      6      DRY    OUT
 ```
 
 `loop{1..6}_volume` — the `_volume` suffix is what makes the host render a
-fader rather than a dial — plus `master_out` and `master_pan`, a single
-control fanning the six loops across the stereo field. Spread is most of why
-this kind of piece sounds spacious rather than cluttered.
+fader rather than a dial — then `master_dry` and `master_out`.
+
+`master_dry` is the live input's level, defaulting to full: an effect that
+silences its input is a bug. It is **not** a dry/wet crossfade, since the loops
+carry their own levels on this same page. It sits here, beside the six faders
+and immediately before OUT, because it is one more thing being balanced.
 
 ### Loop 1 … Loop 6
 
@@ -152,9 +175,10 @@ it sits.
 
 | key | type | |
 |---|---|---|
-| `loopN_record` | trigger | Records into *this* loop, so no routing parameter is needed (Forgetful needs one because its REC is global). Reads `REC` / `STOP`. |
+| `loopN_record` | trigger | Three destinations from one button, exactly as in Forgetful: an idle loop starts recording, a recording loop closes the take, and a loaded loop toggles **overdub**, layering fresh input onto what is there pass after pass without stopping. Records into *this* loop, so no routing parameter is needed (Forgetful needs one because its REC is global). Reads `REC` → `STOP` → `DUB` → `PLAY`. |
 | `loopN_trig` | trigger | One-shot audition of the window, ignoring the period. |
-| `loopN_start` / `loopN_end` | float 0–1, `unit:"%"` | Window bounds. Ordering and the minimum span are resolved **per block, not in `set_param`**, so a knob never snaps back under the hand. END below START collapses to a minimum-length loop *at* START rather than swapping the two. |
+| `loopN_start` | float 0–1, `unit:"%"` | Where the window begins in the take. |
+| `loopN_end` | float −1…+1, `unit:"%"` | **A bipolar length measured from START, not a second position.** Centre is a zero-length window; the top half grows the window forward from START until it reaches the end of the take; the bottom half grows it *backward* from START, played in **reverse**, reaching the head of the take at the extreme. The two halves are mirror images about a silent centre, and the reverse half reaches material the forward half never can. Because END is a length, there is no ordering to enforce and no way to set an inside-out window. The span is still resolved **per block, not in `set_param`**, so a knob never snaps back under the hand. |
 | `loopN_bpm` | float 40–200, step 1 | This loop's tempo. |
 | `loopN_beats` | float 1–16, step 1 | `period = beats × 60/bpm`. Default 4 — at 100 BPM a 2.4 s loop, long enough to hear as a phrase rather than a flutter. |
 | `loopN_fit` | enum `PAD`/`SPEED`/`RPT` | Below. |
@@ -169,18 +193,28 @@ beautifully, and the restricted set would have forbidden it.
 
 ### FIT modes
 
-All three are the same counter, differing only in how `read` maps into the
-window:
+Three ways to reconcile window and period, each immediately followed by its
+faded companion — six modes, read as three pairs:
 
 ```
-PAD    read = phase*P, silent past W   [####......................]
-SPEED  read = phase*W                  [########################..]
-RPT    read = fmod(phase*P, W)         [####][####][####][####][##]
+PAD  PADF    read = phase*P, silent past W   [####......................]
+SPD  SPDF    read = phase*W                  [########################..]
+RPT  RPTF    read = fmod(phase*P, W)         [####][####][####][####][##]
 ```
 
-`SPEED` is varispeed: the window plays at rate `W/P` so it exactly fills the
-period, with no gap and a shifted pitch. It is the most Forgetful-like of the
-three, and costs one line beyond the interpolation the module already needs.
+They are the same counter; only the mapping from `phase` into the window
+differs. `SPD` is varispeed: the window plays at rate `W/P` so it exactly fills
+the period, with no gap and a shifted pitch — the most Forgetful-like of the
+three, and one line beyond the interpolation the module already needs.
+
+The **`F` companions apply a short volume envelope to the tail of the window**,
+taking it to zero so the seam cannot click. The raw modes keep the click on
+purpose: a hard splice is a percussive event and tape music is full of them.
+This is why declicking is a mode here rather than the always-on ~4 ms fade the
+design originally specified.
+
+`SPEED` was shortened to `SPD` so that its companion stays inside the
+5-character label cap.
 
 ## Implementation notes
 

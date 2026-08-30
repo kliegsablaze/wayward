@@ -95,7 +95,7 @@ int main(void) {
 
         const char *master[] = { "master_play", "master_sync", "master_base",
                                  "master_spread", "master_ens", "master_resync",
-                                 "master_dry", "master_out", "master_pan" };
+                                 "master_dry", "master_out", "master_widen" };
         for (size_t i = 0; i < sizeof(master) / sizeof(master[0]); i++) {
             char probe[64];
             snprintf(probe, sizeof(probe), "\"%s\"", master[i]);
@@ -120,7 +120,7 @@ int main(void) {
         check(count_occurrences(ui, "\"level\":") == 7,
               "test1: root carries seven nav entries — Mix and six loops");
         /* One deliberate blank cell on Main. */
-        check(strstr(ui, "\"master_dry\",\"\"") != NULL,
+        check(strstr(ui, "\"master_widen\",\"\"") != NULL,
               "test1: Main's last cell is a load-bearing blank");
 
         api->destroy_instance(inst);
@@ -225,18 +225,33 @@ int main(void) {
         api->get_param(inst, "loop1_fit", buf, sizeof(buf));
         check(strcmp(buf, "PAD") == 0, "test6: FIT defaults to PAD");
 
-        api->set_param(inst, "loop1_fit", "SPEED");
+        api->set_param(inst, "loop1_fit", "SPD");
         api->get_param(inst, "loop1_fit", buf, sizeof(buf));
-        check(strcmp(buf, "SPEED") == 0, "test6: FIT accepts a label");
+        check(strcmp(buf, "SPD") == 0, "test6: FIT accepts a label");
 
-        api->set_param(inst, "loop1_fit", "2");
+        api->set_param(inst, "loop1_fit", "5");
         api->get_param(inst, "loop1_fit", buf, sizeof(buf));
-        check(strcmp(buf, "RPT") == 0, "test6: FIT also accepts an index");
+        check(strcmp(buf, "RPTF") == 0, "test6: FIT also accepts an index");
 
         /* Garbage must leave the value alone rather than reset it. */
         api->set_param(inst, "loop1_fit", "banana");
         api->get_param(inst, "loop1_fit", buf, sizeof(buf));
-        check(strcmp(buf, "RPT") == 0, "test6: an unparseable enum write is ignored");
+        check(strcmp(buf, "RPTF") == 0, "test6: an unparseable enum write is ignored");
+
+        /* Every raw mode is followed by its faded companion, so the six read
+         * as three pairs. */
+        const char *fit_order[] = { "PAD", "PADF", "SPD", "SPDF", "RPT", "RPTF" };
+        for (int i = 0; i < 6; i++) {
+            char idx[4];
+            snprintf(idx, sizeof(idx), "%d", i);
+            api->set_param(inst, "loop1_fit", idx);
+            api->get_param(inst, "loop1_fit", buf, sizeof(buf));
+            check(strcmp(buf, fit_order[i]) == 0,
+                  "test6: the six FIT modes are three raw/faded pairs in order");
+            check(strpbrk(buf, "-_+ ") == NULL,
+                  "test6: no FIT label contains a character the enum-square\n"
+                  "       renderer would break the value on");
+        }
 
         api->set_param(inst, "master_sync", "MOVE");
         api->get_param(inst, "master_sync", buf, sizeof(buf));
@@ -294,6 +309,24 @@ int main(void) {
         api->destroy_instance(inst);
     }
 
+    /* ---- test 7b: REC is three-way — record, close, overdub ----------- */
+    {
+        void *inst = api->create_instance(NULL, NULL);
+
+        /* Give loop 1 a take. The skeleton captures no audio, so drive the
+         * state machine the only way a black-box test can: record long
+         * enough is impossible yet, so this asserts the EMPTY->RECORDING leg
+         * and the readout vocabulary that goes with it. */
+        api->get_param(inst, "loop1_record", buf, sizeof(buf));
+        check(strcmp(buf, "REC") == 0, "test7b: an empty loop offers REC");
+
+        api->set_param(inst, "loop1_record", "GO");
+        api->get_param(inst, "loop1_record", buf, sizeof(buf));
+        check(strcmp(buf, "STOP") == 0, "test7b: a recording loop offers STOP");
+
+        api->destroy_instance(inst);
+    }
+
     /* ---- test 8: transport ------------------------------------------- */
     {
         void *inst = api->create_instance(NULL, NULL);
@@ -322,14 +355,27 @@ int main(void) {
     {
         void *inst = api->create_instance(NULL, NULL);
 
-        api->set_param(inst, "loop1_start", "0.750");
-        api->set_param(inst, "loop1_end",   "0.250");
-        api->get_param(inst, "loop1_start", buf, sizeof(buf));
-        check(strcmp(buf, "0.750") == 0,
-              "test9: START keeps what the knob said even when it passes END —\n"
-              "       ordering is resolved per block so the knob never snaps back");
         api->get_param(inst, "loop1_end", buf, sizeof(buf));
-        check(strcmp(buf, "0.250") == 0, "test9: END likewise");
+        check(strcmp(buf, "1.000") == 0,
+              "test9: END defaults to +1 — the whole take, forwards");
+
+        /* END is a bipolar LENGTH from START, not a second position, so a
+         * negative value is a legal reversed window rather than an
+         * inside-out one. */
+        api->set_param(inst, "loop1_start", "0.750");
+        api->set_param(inst, "loop1_end",   "-0.500");
+        api->get_param(inst, "loop1_start", buf, sizeof(buf));
+        check(strcmp(buf, "0.750") == 0, "test9: START keeps what the knob said");
+        api->get_param(inst, "loop1_end", buf, sizeof(buf));
+        check(strcmp(buf, "-0.500") == 0,
+              "test9: a negative END is kept — it means reversed, not invalid");
+
+        api->set_param(inst, "loop1_end", "-9");
+        api->get_param(inst, "loop1_end", buf, sizeof(buf));
+        check(strcmp(buf, "-1.000") == 0, "test9: END clamps at -1");
+        api->set_param(inst, "loop1_end", "9");
+        api->get_param(inst, "loop1_end", buf, sizeof(buf));
+        check(strcmp(buf, "1.000") == 0, "test9: END clamps at +1");
 
         api->set_param(inst, "loop1_start", "-3");
         api->get_param(inst, "loop1_start", buf, sizeof(buf));

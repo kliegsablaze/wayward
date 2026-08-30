@@ -105,11 +105,25 @@ typedef enum {
     LOOP_LOADED       /* has a take; plays when the ensemble runs */
 } loop_state_t;
 
-typedef enum { FIT_PAD = 0, FIT_SPEED, FIT_RPT } fit_mode_t;
+/* Six modes: each way of reconciling window and period, immediately followed
+ * by its faded companion. The companion applies a short volume envelope to
+ * the tail of the window, taking it to zero so the seam cannot click. The raw
+ * modes keep the click deliberately — a hard splice is a percussive event,
+ * and tape music is full of them. */
+typedef enum {
+    FIT_PAD = 0, FIT_PAD_F,
+    FIT_SPD,     FIT_SPD_F,
+    FIT_RPT,     FIT_RPT_F
+} fit_mode_t;
 
 /* No numeric labels anywhere — see the wire-format note in the header. */
-static const char *const FIT_LABELS[]  = { "PAD", "SPEED", "RPT" };
-#define FIT_COUNT 3
+static const char *const FIT_LABELS[]  = {
+    "PAD", "PADF", "SPD", "SPDF", "RPT", "RPTF"
+};
+#define FIT_COUNT 6
+
+/* True for the companion modes — the odd indices. */
+#define FIT_IS_FADED(f) (((int)(f) & 1) != 0)
 
 static const char *const SYNC_LABELS[] = { "FREE", "MOVE" };
 #define SYNC_COUNT 2
@@ -132,10 +146,27 @@ typedef struct {
     int        recorded_length;   /* frames in the finished take */
 
     loop_state_t state;
+    int overdubbing;   /* LOADED loops only: layering new input onto the take */
 
-    /* Window, as fractions of the take. Ordering and the minimum span are
-     * resolved per block rather than in set_param, so that a knob never
-     * snaps back under the hand. */
+    /* The window, as fractions of the take.
+     *
+     * START is an ordinary position, 0..1.
+     *
+     * END is a BIPOLAR LENGTH measured from START, -1..+1, not a second
+     * position — which is why there is no ordering to enforce between the
+     * two and no way to set an inside-out window:
+     *
+     *     +1.0   forward from START all the way to the end of the take
+     *     +0.5   forward, half the material that lies after START
+     *      0.0   zero length
+     *     -0.5   BACKWARD from START, half the material that lies before it,
+     *            played in reverse
+     *     -1.0   backward to the very head of the take, reversed
+     *
+     * So the two halves of the knob are mirror images about a silent centre,
+     * and the reverse half grows into material the forward half can never
+     * reach. The span is still resolved per block rather than in set_param,
+     * so a knob never snaps back under the hand. */
     float start_frac;
     float end_frac;
 
@@ -160,7 +191,7 @@ typedef struct {
     float spread;
     float dry;
     float out;
-    float pan;
+    float widen;
 
     uint64_t total_frames;
 } inst_t;
@@ -222,6 +253,7 @@ static void init_loop(loop_t *loop) {
     loop->write_head      = 0;
     loop->recorded_length = 0;
     loop->state           = LOOP_EMPTY;
+    loop->overdubbing     = 0;
     loop->start_frac      = 0.0f;
     loop->end_frac        = 1.0f;
     loop->bpm             = DEFAULT_BPM;
@@ -240,39 +272,39 @@ static void init_loop(loop_t *loop) {
 
 /* One character per loop, in ensemble order:
  *     .  nothing recorded
- *     I  has a take, ensemble stopped
- *     O  playing
+ *     S  has a take, ensemble stopped
+ *     P  playing
+ *     O  overdubbing onto the take while it plays
  *     R  recording right now
  *
- * THE GLYPHS ARE CONSTRAINED BY THE RENDERER, not chosen for looks. The enum
- * square puts every value through enumSquareLines() (schwung's
+ * THE GLYPHS ARE CONSTRAINED BY THE RENDERER, not chosen for looks. Every
+ * value goes through enumSquareLines() (schwung's
  * shared/param_pages/font5x3.mjs), which:
  *
  *   1. treats "-", "_" and " " as WORD SEPARATORS — "-" whenever it falls
  *      between two alphanumerics — and then keeps only the first three
- *      characters of each of the first two words. A readout of "OR-O.." would
- *      come back as "OR" over "O", which is not a truncation of the ensemble,
- *      it is a DIFFERENT ensemble: characters are dropped and every position
- *      after the break shifts, so the reading no longer says which loop is
- *      which. An all-empty "------" survives that rule by accident (no
- *      alphanumeric on either side of any hyphen), which is precisely how
- *      this would have looked correct until the first take was recorded.
- *   2. uppercases the value, so a lowercase glyph cannot be distinct from its
- *      uppercase twin — "o" for playing and "O" for something else is one
- *      glyph on screen.
+ *      characters of each of the first two words. This is why "-" cannot be
+ *      the empty glyph, however much it wants to be: an ensemble reading
+ *      "R-S---" has a hyphen with R on one side and S on the other, so it is
+ *      rewritten to "R S---", split, and drawn as "R" over "S--". That is not
+ *      a truncated ensemble, it is a WRONG one — characters vanish and every
+ *      position after the break shifts, so the readout stops saying which
+ *      loop is which. An all-empty "------" survives by accident, no hyphen
+ *      there having an alphanumeric on either side, which is exactly how the
+ *      fault would look correct until the first take was recorded. "." is the
+ *      nearest glyph that means absence and is never a separator.
+ *   2. uppercases the value, so a glyph cannot differ from its uppercase twin.
  *   3. sends an all-digit value down a different path entirely.
  *
- * So: no "-", no "_", no space, no "+", nothing that differs only in case,
- * and never all digits. ".", "I", "O" and "R" satisfy all of it.
- *
- * Six characters. If they do not fit the interior on one line the renderer
- * falls back to a blind 3+3 slice, which here gives loops 1-3 over loops 4-6
- * with every position intact — a legible second-best rather than a wrong
- * reading. */
+ * Six characters, no separator, which is also what gets the requested
+ * two-rows-of-three for free: if the six do not fit the interior on one line,
+ * enumSquareLines falls back to a blind 3+3 slice and the renderer centres
+ * both rows — loops 1-3 above loops 4-6, every position intact. */
 static char loop_status_char(const inst_t *s, const loop_t *loop) {
     if (loop->state == LOOP_RECORDING) return 'R';
     if (loop->state == LOOP_EMPTY)     return '.';
-    return s->playing ? 'O' : 'I';
+    if (!s->playing)                   return 'S';
+    return loop->overdubbing ? 'O' : 'P';
 }
 
 static int master_ens_text(const inst_t *s, char *buf, int len) {
@@ -289,6 +321,9 @@ static int master_ens_text(const inst_t *s, char *buf, int len) {
  * while playing. Forgetful arrived at this after three other vocabularies. */
 static int loop_record_text(const loop_t *loop, char *buf, int len) {
     if (loop->state == LOOP_RECORDING) return snprintf(buf, len, "STOP");
+    if (loop->state == LOOP_LOADED) {
+        return snprintf(buf, len, loop->overdubbing ? "PLAY" : "DUB");
+    }
     return snprintf(buf, len, "REC");
 }
 
@@ -301,21 +336,30 @@ static void close_recording(loop_t *loop) {
         /* Too short to be anything. Throw it away rather than keep a click. */
         loop->write_head      = 0;
         loop->recorded_length = 0;
+        loop->overdubbing     = 0;
         loop->state           = LOOP_EMPTY;
         return;
     }
     loop->recorded_length = loop->write_head;
     loop->start_frac      = 0.0f;
-    loop->end_frac        = 1.0f;
+    loop->end_frac        = 1.0f;   /* the whole take, forwards */
+    loop->overdubbing     = 0;
     loop->state           = LOOP_LOADED;
 }
 
+/* Three destinations from one button, as in Forgetful: an idle loop starts
+ * recording, a recording loop closes the take, and a loaded loop toggles
+ * OVERDUB — layering fresh input onto what is already there, pass after pass,
+ * without ever stopping. */
 static void loop_record_press(loop_t *loop) {
     if (loop->state == LOOP_RECORDING) {
         close_recording(loop);
+    } else if (loop->state == LOOP_LOADED) {
+        loop->overdubbing = !loop->overdubbing;
     } else {
         loop->write_head      = 0;
         loop->recorded_length = 0;
+        loop->overdubbing     = 0;
         loop->state           = LOOP_RECORDING;
     }
 }
@@ -337,7 +381,7 @@ static void *v2_create_instance(const char *dir, const char *cfg) {
     s->spread    = DEFAULT_SPREAD;  /* 100..105 out of the box */
     s->dry       = 1.0f;            /* an fx that silences its input is a bug */
     s->out       = 0.8f;
-    s->pan       = 0.5f;
+    s->widen     = 0.5f;
 
     for (int i = 0; i < NUM_LOOPS; i++) {
         init_loop(&s->loops[i]);
@@ -406,7 +450,8 @@ static void loop_set_param(inst_t *s, loop_t *loop,
     } else if (strcmp(suffix, "start") == 0) {
         loop->start_frac = clampf((float)atof(val), 0.0f, 1.0f);
     } else if (strcmp(suffix, "end") == 0) {
-        loop->end_frac = clampf((float)atof(val), 0.0f, 1.0f);
+        /* Bipolar: the sign is the playback direction. */
+        loop->end_frac = clampf((float)atof(val), -1.0f, 1.0f);
     } else if (strcmp(suffix, "bpm") == 0) {
         loop->bpm = clampf(roundf((float)atof(val)), MIN_BPM, MAX_BPM);
     } else if (strcmp(suffix, "beats") == 0) {
@@ -476,8 +521,8 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
         s->out = clampf((float)atof(val), 0.0f, 1.0f);
         return;
     }
-    if (strcmp(key, "master_pan") == 0) {
-        s->pan = clampf((float)atof(val), 0.0f, 1.0f);
+    if (strcmp(key, "master_widen") == 0) {
+        s->widen = clampf((float)atof(val), 0.0f, 1.0f);
         return;
     }
 
@@ -553,7 +598,7 @@ static int build_chain_params(char *buf, int len) {
         ",{\"key\":\"master_out\",\"name\":\"OUT\",\"type\":\"float\","
           "\"min\":0,\"max\":1,\"default\":0.8,\"step\":0.01,\"unit\":\"%%\","
           "\"display_format\":\"%%.0f\"}"
-        ",{\"key\":\"master_pan\",\"name\":\"PAN\",\"type\":\"float\","
+        ",{\"key\":\"master_widen\",\"name\":\"WIDEN\",\"type\":\"float\","
           "\"min\":0,\"max\":1,\"default\":0.5,\"step\":0.01,\"unit\":\"%%\","
           "\"display_format\":\"%%.0f\"}",
         TRIGGER_OPTIONS_JSON,
@@ -581,8 +626,10 @@ static int build_chain_params(char *buf, int len) {
             ",{\"key\":\"loop%d_start\",\"name\":\"START\",\"type\":\"float\","
               "\"min\":0,\"max\":1,\"default\":0,\"step\":0.001,"
               "\"unit\":\"%%\",\"display_format\":\"%%.0f\"}"
+            /* Bipolar, so it reads -100%..+100% with silence at the centre
+             * detent and the sign naming the direction of travel. */
             ",{\"key\":\"loop%d_end\",\"name\":\"END\",\"type\":\"float\","
-              "\"min\":0,\"max\":1,\"default\":1,\"step\":0.001,"
+              "\"min\":-1,\"max\":1,\"default\":1,\"step\":0.001,"
               "\"unit\":\"%%\",\"display_format\":\"%%.0f\"}"
             ",{\"key\":\"loop%d_bpm\",\"name\":\"BPM\",\"type\":\"float\","
               "\"min\":%.0f,\"max\":%.0f,\"default\":%.0f,\"step\":1,"
@@ -596,7 +643,8 @@ static int build_chain_params(char *buf, int len) {
               "\"min\":%.0f,\"max\":%.0f,\"default\":%.0f,\"step\":1,"
               "\"display_format\":\"%%.0f\"}"
             ",{\"key\":\"loop%d_fit\",\"name\":\"FIT\",\"type\":\"enum\","
-              "\"options\":[\"PAD\",\"SPEED\",\"RPT\"],\"default\":0}"
+              "\"options\":[\"PAD\",\"PADF\",\"SPD\",\"SPDF\",\"RPT\",\"RPTF\"],"
+              "\"default\":0}"
             ",{\"key\":\"loop%d_phase\",\"name\":\"PHAS\",\"type\":\"float\","
               "\"min\":-0.5,\"max\":0.5,\"default\":0,\"step\":0.005,"
               "\"unit\":\"%%\",\"display_format\":\"%%.0f\"}",
@@ -631,7 +679,7 @@ static int build_ui_hierarchy(char *buf, int len) {
            * are read together: BASE is where the piece is, SPRD is how fast
            * it comes apart. */
           "\"knobs\":[\"master_play\",\"master_sync\",\"master_base\",\"master_spread\","
-                     "\"master_ens\",\"master_resync\",\"master_dry\",\"\"],"
+                     "\"master_ens\",\"master_resync\",\"master_widen\",\"\"],"
           "\"params\":["
             "{\"key\":\"master_play\",\"label\":\"Play\"},"
             "{\"key\":\"master_sync\",\"label\":\"Sync\"},"
@@ -639,7 +687,7 @@ static int build_ui_hierarchy(char *buf, int len) {
             "{\"key\":\"master_spread\",\"label\":\"Spread\"},"
             "{\"key\":\"master_ens\",\"label\":\"Ens\"},"
             "{\"key\":\"master_resync\",\"label\":\"Resync\"},"
-            "{\"key\":\"master_dry\",\"label\":\"Dry\"},"
+            "{\"key\":\"master_widen\",\"label\":\"Widen\"},"
             "{\"level\":\"mix\",\"label\":\"Mix\"},"
             "{\"level\":\"loop1\",\"label\":\"Loop 1\"},"
             "{\"level\":\"loop2\",\"label\":\"Loop 2\"},"
@@ -651,7 +699,7 @@ static int build_ui_hierarchy(char *buf, int len) {
          * order, then what leaves the module. */
         ",\"mix\":{\"label\":\"Mix\",\"knobs\":["
           "\"loop1_volume\",\"loop2_volume\",\"loop3_volume\",\"loop4_volume\","
-          "\"loop5_volume\",\"loop6_volume\",\"master_out\",\"master_pan\"]}");
+          "\"loop5_volume\",\"loop6_volume\",\"master_dry\",\"master_out\"]}");
 
     /* One level PER LOOP, so each is its own named section. Merging them
      * into a single "loops" level would make the six one section, but the
@@ -697,7 +745,7 @@ static int v2_get_param(void *instance, const char *key, char *buf, int len) {
     if (strcmp(key, "master_ens") == 0)    return master_ens_text(s, buf, len);
     if (strcmp(key, "master_dry") == 0)    return snprintf(buf, len, "%.3f", (double)s->dry);
     if (strcmp(key, "master_out") == 0)    return snprintf(buf, len, "%.3f", (double)s->out);
-    if (strcmp(key, "master_pan") == 0)    return snprintf(buf, len, "%.3f", (double)s->pan);
+    if (strcmp(key, "master_widen") == 0)  return snprintf(buf, len, "%.3f", (double)s->widen);
 
     if (strcmp(key, "chain_params") == 0)  return build_chain_params(buf, len);
     if (strcmp(key, "ui_hierarchy") == 0)  return build_ui_hierarchy(buf, len);
