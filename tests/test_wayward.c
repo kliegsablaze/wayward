@@ -250,18 +250,18 @@ int main(void) {
         void *inst = api->create_instance(NULL, NULL);
 
         api->get_param(inst, "master_ens", buf, sizeof(buf));
-        check(strcmp(buf, "------") == 0,
+        check(strcmp(buf, "......") == 0,
               "test7: ENS shows six empty loops at startup");
 
         /* A trigger fires on anything that is not the idle spelling. */
         api->set_param(inst, "loop3_record", "-");
         api->get_param(inst, "master_ens", buf, sizeof(buf));
-        check(strcmp(buf, "------") == 0,
+        check(strcmp(buf, "......") == 0,
               "test7: writing the idle spelling does not fire a trigger");
 
         api->set_param(inst, "loop3_record", "GO");
         api->get_param(inst, "master_ens", buf, sizeof(buf));
-        check(strcmp(buf, "--R---") == 0,
+        check(strcmp(buf, "..R...") == 0,
               "test7: REC on loop 3 shows R in the third position only");
 
         /* The button names what the NEXT press will do. */
@@ -278,8 +278,18 @@ int main(void) {
          * buffer. */
         api->set_param(inst, "loop3_record", "GO");
         api->get_param(inst, "master_ens", buf, sizeof(buf));
-        check(strcmp(buf, "------") == 0,
+        check(strcmp(buf, "......") == 0,
               "test7: a take under the 50 ms minimum is discarded");
+
+        /* The readout must never contain a character enumSquareLines() treats
+         * as a word separator: one of those splits the value and shifts every
+         * position after it, so the ensemble reads wrong rather than short. */
+        api->set_param(inst, "loop2_record", "GO");
+        api->get_param(inst, "master_ens", buf, sizeof(buf));
+        check(strcmp(buf, ".R....") == 0, "test7: ENS tracks a second loop");
+        check(strpbrk(buf, "-_+ ") == NULL,
+              "test7: ENS contains no character the enum-square renderer\n"
+              "       would break the value on");
 
         api->destroy_instance(inst);
     }

@@ -239,19 +239,40 @@ static void init_loop(loop_t *loop) {
 /* ------------------------------------------------------------------ */
 
 /* One character per loop, in ensemble order:
- *     -  nothing recorded
- *     .  has a take, ensemble stopped
- *     o  playing
+ *     .  nothing recorded
+ *     I  has a take, ensemble stopped
+ *     O  playing
  *     R  recording right now
  *
- * Six characters, no separator. Forgetful's equivalent is four wide and
- * fits on one line since Schwung 1.0 widened the cell (~6-8 characters at
- * the 4x5 font); six is inside that estimate but has not been seen on
- * hardware yet — worth a look on the first deploy. */
+ * THE GLYPHS ARE CONSTRAINED BY THE RENDERER, not chosen for looks. The enum
+ * square puts every value through enumSquareLines() (schwung's
+ * shared/param_pages/font5x3.mjs), which:
+ *
+ *   1. treats "-", "_" and " " as WORD SEPARATORS — "-" whenever it falls
+ *      between two alphanumerics — and then keeps only the first three
+ *      characters of each of the first two words. A readout of "OR-O.." would
+ *      come back as "OR" over "O", which is not a truncation of the ensemble,
+ *      it is a DIFFERENT ensemble: characters are dropped and every position
+ *      after the break shifts, so the reading no longer says which loop is
+ *      which. An all-empty "------" survives that rule by accident (no
+ *      alphanumeric on either side of any hyphen), which is precisely how
+ *      this would have looked correct until the first take was recorded.
+ *   2. uppercases the value, so a lowercase glyph cannot be distinct from its
+ *      uppercase twin — "o" for playing and "O" for something else is one
+ *      glyph on screen.
+ *   3. sends an all-digit value down a different path entirely.
+ *
+ * So: no "-", no "_", no space, no "+", nothing that differs only in case,
+ * and never all digits. ".", "I", "O" and "R" satisfy all of it.
+ *
+ * Six characters. If they do not fit the interior on one line the renderer
+ * falls back to a blind 3+3 slice, which here gives loops 1-3 over loops 4-6
+ * with every position intact — a legible second-best rather than a wrong
+ * reading. */
 static char loop_status_char(const inst_t *s, const loop_t *loop) {
     if (loop->state == LOOP_RECORDING) return 'R';
-    if (loop->state == LOOP_EMPTY)     return '-';
-    return s->playing ? 'o' : '.';
+    if (loop->state == LOOP_EMPTY)     return '.';
+    return s->playing ? 'O' : 'I';
 }
 
 static int master_ens_text(const inst_t *s, char *buf, int len) {

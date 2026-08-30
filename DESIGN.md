@@ -94,10 +94,38 @@ ENS    RSYN   DRY    ····
 | `master_sync` | enum `FREE`/`MOVE` | `MOVE` also starts on the host transport and tracks `get_bpm()` as BASE. |
 | `master_base` | float 40–200, step 1 | Reference tempo. |
 | `master_spread` | float −12…+12, step 1 | Loop *i* runs at `base + i × spread`. **0 locks all six in unison**; the return to 0 is the piece's largest gesture. Writes the six per-loop tempi, which stay individually editable afterwards. |
-| `master_ens` | enum, `access:"read"` | Six characters, one per loop: `-` empty, `.` has a take, `o` playing, `R` recording. |
+| `master_ens` | enum, `access:"read"` | Six characters, one per loop: `.` empty, `I` has a take, `O` playing, `R` recording. The glyphs are constrained by the renderer, not chosen for looks — see below. |
 | `master_resync` | trigger | Re-zeroes every phase *without* stopping — pull the ensemble back into unison mid-performance. |
 | `master_dry` | float 0–1, `unit:"%"` | The live input's level. Defaults to full: an effect that silences its input is a bug. |
 | `""` | | A load-bearing blank cell. |
+
+### What the ENS readout may contain
+
+The enum square puts every value through `enumSquareLines()` in schwung's
+`shared/param_pages/font5x3.mjs`, which imposes three rules that between them
+choose the glyphs:
+
+1. `-`, `_` and space are **word separators** — `-` whenever it falls between
+   two alphanumerics — and the function then keeps only the first three
+   characters of each of the first two words. The design originally used `-`
+   for an empty loop, which meant a mixed state like `OR-O..` would render as
+   `OR` over `O`: characters dropped, and every position after the break
+   shifted, so the readout no longer says *which* loop is which. An all-empty
+   `------` survives by accident, since no hyphen there has an alphanumeric on
+   either side — which is exactly how the bug would have looked correct until
+   the first take was recorded.
+2. The value is uppercased, so a glyph cannot be told apart from its uppercase
+   twin.
+3. An all-digit value takes a different path entirely.
+
+Hence `.`, `I`, `O`, `R`: no separator character, no case-only distinction,
+never all digits. If six characters do not fit the interior on one line, the
+renderer falls back to a blind 3+3 slice, giving loops 1–3 over loops 4–6 with
+every position intact — a legible second-best rather than a wrong reading.
+
+**Page count is settled:** `drawBankBar` (`render_page_movy.mjs:902`) handles
+any `pageCount` up to the 128-pixel display width, and the planner imposes no
+limit on levels, so eight sections is fine. Mix stays its own page.
 
 ### Mix
 
@@ -210,12 +238,6 @@ audio. Same trade Forgetful makes.
 6. `SYNC MOVE` against the host transport — last, because it is the only part
    that depends on anything outside the module.
 
-**Open question, to settle on the first deploy:** eight sections is one more
-than Forgetful ships, and the page planner has not been proven at that count.
-If eight will not render, Mix folds back into Main and LEVEL takes PHASE's
-cell on the loop pages. Worth confirming before step 2. The six-character ENS
-readout is the other unverified guess — Forgetful's equivalent is four wide,
-and the cell is estimated at 6–8 characters.
 
 ## Testing
 
