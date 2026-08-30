@@ -27,27 +27,42 @@ the Move's own display.
 See [DESIGN.md](DESIGN.md) for the interaction model, the phasing maths, and
 the DSP architecture.
 
-> **Status: feature complete, unreleased.** Everything in the design is built
-> and tested — recording, windowing, the period counter, all six loops, the fit
-> modes and the mixer. It has not been through much playing yet, and it is not
-> in the Module Store.
-
 ## Installing
 
-Wayward is not in the Schwung module catalog yet. Install it with the Schwung
-Manager's **Install custom module** option, which asks for a GitHub repo link:
-
-1. Open `http://move.local:7700`
-2. Choose **Install custom module**
-3. Give it `https://github.com/kliegsablaze/wayward`
+Wayward is in the Schwung module catalog, so **Schwung Manager installs and
+updates it for you**. Open `http://move.local:7700`, find Wayward in the
+Module Store and install it; new releases show up there within a few minutes
+of being tagged.
 
 Needs **Schwung 1.0.0 or newer** — not 0.12.x. The Loop page is a *child
 level*, six loops sharing one page with a selector, and the host machinery
 that makes the selector work (`syncChildIndexFromModule`, and the cache-skip
 that stops it going dead after one move) first shipped in 1.0.0.
 
-Once it is in the catalog, the Module Store will install and update it like
-any other module, and this section and the manual will say so instead.
+### Installing by hand
+
+For development, or on a Move with no network. Download
+**[wayward-module.tar.gz](https://github.com/kliegsablaze/wayward/releases/latest/download/wayward-module.tar.gz)**
+([all releases](https://github.com/kliegsablaze/wayward/releases)) and unpack
+it into the `audio_fx` module directory:
+
+```bash
+scp wayward-module.tar.gz ableton@move.local:/data/UserData/
+ssh ableton@move.local 'set -e
+  D=/data/UserData/schwung/modules/audio_fx/wayward
+  mkdir -p "$D" /data/UserData/.wy-stage
+  tar xzf /data/UserData/wayward-module.tar.gz -C /data/UserData/.wy-stage
+  mv -f /data/UserData/.wy-stage/wayward/wayward.so "$D/wayward.so"
+  mv -f /data/UserData/.wy-stage/wayward/module.json "$D/module.json"
+  rm -rf /data/UserData/.wy-stage /data/UserData/wayward-module.tar.gz'
+```
+
+It unpacks to a staging directory and *moves* the files into place rather than
+extracting over them. That matters if you are replacing an install currently
+loaded in a slot: writing over a `.so` that a running process has mapped
+truncates the file under the live mapping, and the next page fault takes
+Move's audio process down with it. A `mv` within `/data` is an atomic rename,
+so the running instance keeps its old mapping and carries on until you reload.
 
 ## Building
 
