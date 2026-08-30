@@ -201,7 +201,31 @@ it sits.
 | `loopN_bpm` | float 40–200, step 1 | This loop's tempo. |
 | `loopN_beats` | float 1–16, step 1 | `period = beats × 60/bpm`. Default 4 — at 100 BPM a 2.4 s loop, long enough to hear as a phrase rather than a flutter. |
 | `loopN_fit` | enum `PAD`/`SPEED`/`RPT` | Below. |
-| `loopN_phase` | float −0.5…+0.5 | Offsets this loop within its own cycle: slide it against the others by hand instead of waiting for it to drift. Slewed ~40 ms so it moves rather than clicks. |
+| `loopN_phase` | float −0.5…+0.5 | Offsets this loop within its own cycle: slide it against the others by hand instead of waiting for it to drift. **Rate-limited per frame**, so the loop runs up to 25% fast or slow until it arrives rather than jumping — see below. |
+
+### PHASE slides; it does not jump
+
+PHASE offsets by a fraction of a **cycle**, so its effect on the read position
+is multiplied by the period. One detent is 0.005 of a cycle — at 100 BPM × 4
+beats, **529 frames**. Applying that as a position, even smoothed between
+blocks, teleports the playhead into unrelated audio, and a knob sweep does it
+several hundred times a second. It was built that way first, with a per-block
+chase, and it sounded like it.
+
+The offset is therefore rate-limited per **frame**, and the limit is expressed
+as a speed deviation: the loop runs up to 25% fast or slow until it arrives.
+Nothing is ever spliced, and the sound it makes is the correct one — running a
+loop fast to pull it forward is exactly what a performer does to tape by hand,
+and what Reich's players do to pull *Piano Phase* apart. A detent lands in
+about 50 ms; a full half-cycle sweep takes a few seconds and audibly slides
+the loop into place.
+
+`test28` measures the second difference of the output against a triangle take,
+which has no curvature anywhere except its apex, so any jump in the playhead
+shows as a spike. It was first written against a *ramp* in a faded mode and
+failed for the wrong reason: the fade-out corner at the window's end is itself
+a slope change of ~91 per frame, which the metric flagged whether or not PHASE
+moved at all.
 
 ### SYNC MOVE
 

@@ -133,10 +133,27 @@
  * (a wrap, a knob), and filling would smear the new input across the take. */
 #define OVERDUB_MAX_FILL 64
 
-/* Per-block chase coefficients. At 128 frames a block these are roughly a
- * 12 ms gain glide and a 40 ms phase glide. */
+/* Per-block gain chase. At 128 frames a block this is roughly a 12 ms glide,
+ * which is enough to keep a knob step off a multiply. */
 #define GAIN_SLEW        0.25f
-#define PHASE_SLEW       0.08f
+
+/* HOW FAST PHASE IS ALLOWED TO MOVE THE PLAYHEAD, in extra frames per frame.
+ *
+ * PHASE offsets by a fraction of a CYCLE, so its effect on the read position
+ * is scaled by the period: one detent is 0.005 of a cycle, which at 100 BPM
+ * x 4 beats is 529 frames. Applying that as a position — even smoothed
+ * between blocks — teleports the playhead into unrelated audio, and a knob
+ * sweep does it hundreds of times a second. That is a splice, not a glide.
+ *
+ * So the offset is rate-limited per FRAME instead, and the limit is
+ * expressed as a speed deviation: the loop runs up to 25% fast or 25% slow
+ * until it arrives. Nothing is ever spliced, and the sound is the right one
+ * — this is exactly what a performer does to a tape loop by hand, and what
+ * Reich's players did to pull Piano Phase apart.
+ *
+ * A whole detent lands in about 50 ms; the full half-cycle sweep takes a few
+ * seconds, and audibly slides the loop into place while it happens. */
+#define PHASE_SLIDE_RATE 0.25
 
 typedef struct { int16_t l, r; } frame16_t;
 
@@ -241,7 +258,12 @@ typedef struct {
     /* Chased once per block, so a knob step never lands straight on a
      * multiply — that is what a zipper is. */
     float  vol_cur;
-    float  phase_off_cur;
+
+    /* PHASE, rate-limited per FRAME rather than chased per block: see
+     * PHASE_SLIDE_RATE. A double because it is multiplied by the period to
+     * get a frame position. */
+    double phase_off_cur;
+    double phase_step;    /* cycles per frame, from the rate limit */
 
     /* Resolved once per block by the prepass, read every frame. */
     double w_lo, w_hi;    /* the window's bounds inside the take */
@@ -404,7 +426,8 @@ static void init_loop(loop_t *loop) {
     loop->audition        = 0;
     loop->audition_pos    = 0.0;
     loop->vol_cur         = loop->volume;
-    loop->phase_off_cur   = 0.0f;
+    loop->phase_off_cur   = 0.0;
+    loop->phase_step      = 0.0;
     loop->w_lo = loop->w_hi = 0.0;
     loop->span = loop->period = loop->fade = 0.0;
     loop->reversed        = 0;
@@ -657,8 +680,7 @@ static float window_gain(const loop_t *loop, double idx) {
  * 128 times for no reason — the window bounds, the period, the fade length,
  * the stereo placement — plus the gain chases. */
 static void prepass(inst_t *s, loop_t *lp, int index) {
-    lp->vol_cur       += (lp->volume    - lp->vol_cur)       * GAIN_SLEW;
-    lp->phase_off_cur += (lp->phase_off - lp->phase_off_cur) * PHASE_SLEW;
+    lp->vol_cur += (lp->volume - lp->vol_cur) * GAIN_SLEW;
 
     /* WIDEN fans the six evenly about the centre. Constant power, scaled so
      * that WIDEN 0 leaves every loop at unity: without that, closing the
@@ -698,6 +720,9 @@ static void prepass(inst_t *s, loop_t *lp, int index) {
     double period = (double)lp->beats * (60.0 / (double)lp->bpm) * (double)SAMPLE_RATE;
     if (period < 2.0) period = 2.0;
     lp->period = period;
+    /* The rate limit is a speed deviation, so converting it to cycles per
+     * frame depends on the period — a nudge is the same 25% at any tempo. */
+    lp->phase_step = PHASE_SLIDE_RATE / period;
 
     double fade = FIT_IS_FADED(lp->fit) ? (double)(FADE_SECONDS * SAMPLE_RATE) : 0.0;
     if (fade > lp->span * 0.25) fade = lp->span * 0.25;
@@ -763,9 +788,19 @@ static void v2_process_block(void *instance, int16_t *lr, int frames) {
                  * beyond the end of the cycle. */
                 if (lp->pos >= lp->period) lp->pos = fmod(lp->pos, lp->period);
 
+                /* Walk the offset toward its target at the rate limit, once
+                 * per FRAME. The playhead therefore never jumps: it runs
+                 * fast or slow until it has arrived. */
+                {
+                    const double d = (double)lp->phase_off - lp->phase_off_cur;
+                    if (d > lp->phase_step)       lp->phase_off_cur += lp->phase_step;
+                    else if (d < -lp->phase_step) lp->phase_off_cur -= lp->phase_step;
+                    else                          lp->phase_off_cur = (double)lp->phase_off;
+                }
+
                 /* PHASE offsets by a fraction of a CYCLE, so the nudge means
                  * the same musical amount whatever the tempo. */
-                double posf = lp->pos + (double)lp->phase_off_cur * lp->period;
+                double posf = lp->pos + lp->phase_off_cur * lp->period;
                 posf -= lp->period * floor(posf / lp->period);
 
                 double idx = 0.0;

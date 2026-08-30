@@ -976,6 +976,68 @@ int main(void) {
     }
 
 
+
+    /* ---- test 28: PHASE must SLIDE, not teleport ----------------------- */
+    /* A linear ramp has no curvature, so the second difference of the output
+     * is ~0 everywhere the playhead is moving smoothly, and spikes exactly
+     * where it jumps. Turning PHASE moves the read position by
+     * (change in offset) * period frames — 529 frames for ONE detent at 100
+     * BPM x 4 beats — so applying it in per-block steps splices unrelated
+     * audio together several hundred times a second. */
+    {
+        void *inst = api->create_instance(NULL, NULL);
+        isolate_loops(api, inst);
+
+        /* A TRIANGLE, rising to a peak and back to zero. It begins and ends
+         * at silence, so the window needs no fade and the raw PAD mode adds
+         * no corner of its own — the only curvature anywhere in the output
+         * is the apex. Anything else the metric sees is the playhead moving
+         * when it should not. */
+        const long TAKE = 22050;
+        int16_t *mat = (int16_t *)malloc(sizeof(int16_t) * TAKE);
+        for (long i = 0; i < TAKE; i++) {
+            long up = (i < TAKE / 2) ? i : (TAKE - 1 - i);
+            mat[i] = (int16_t)(up * 40000 / TAKE);
+        }
+        record_take(api, inst, "loop1", mat, TAKE);
+
+        for (int L = 2; L <= TEST_NUM_LOOPS; L++) {
+            char key[32];
+            snprintf(key, sizeof(key), "loop%d_volume", L);
+            api->set_param(inst, key, "0");
+        }
+        api->set_param(inst, "loop1_bpm", "60");
+        api->set_param(inst, "loop1_beats", "2");
+        api->set_param(inst, "loop1_fit", "PAD");
+        api->set_param(inst, "master_play", "GO");
+
+        int16_t blk[FRAMES * 2];
+        int p1 = 0, p2 = 0, worst = 0;
+        for (int b = 0; b < 300; b++) {
+            char v[16];
+            snprintf(v, sizeof(v), "%.3f", (b % 80) * 0.005);
+            api->set_param(inst, "loop1_phase", v);
+            memset(blk, 0, sizeof(blk));
+            api->process_block(inst, blk, FRAMES);
+            for (int i = 0; i < FRAMES; i++) {
+                const int x = blk[2 * i];
+                const int d2 = x - 2 * p1 + p2;
+                const int a = d2 < 0 ? -d2 : d2;
+                if (b > 4 && a > worst) worst = a;
+                p2 = p1;
+                p1 = x;
+            }
+        }
+        check(worst < 20,
+              "test28: turning PHASE slides the playhead at a bounded rate\n"
+              "        instead of teleporting it — a jump splices unrelated\n"
+              "        audio together, and a knob sweep does it hundreds of\n"
+              "        times a second");
+
+        free(mat);
+        api->destroy_instance(inst);
+    }
+
     /* ================================================================== */
     /* SYNC MOVE                                                           */
     /*                                                                     */

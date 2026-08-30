@@ -2,7 +2,7 @@
   "id": "wayward",
   "name": "Wayward",
   "abbrev": "WAYW",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "dsp": "wayward.so",
   "api_version": 2,
   "component_type": "audio_fx",
