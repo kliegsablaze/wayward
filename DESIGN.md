@@ -110,7 +110,7 @@ control on the page and the furthest from the hand.
 | key | type | |
 |---|---|---|
 | `master_play` | trigger | Zeroes all six phases at the same frame and runs. That shared moment is what the whole piece drifts away from. Reads `PLAY` / `STOP` — the button names what the *next* press will do, though **only in the header while the knob is held**: see the note below. |
-| `master_sync` | enum `FREE`/`MOVE` | `MOVE` also starts on the host transport and tracks `get_bpm()` as BASE. |
+| `master_sync` | enum `FREE`/`MOVE` | `FREE` ignores the outside world entirely. `MOVE` starts and stops with the host transport and takes its tempo as BASE — see below. |
 | `master_base` | float 40–200, step 1 | Reference tempo. |
 | `master_spread` | float −12…+12, step 1 | Loop *i* runs at `base + i × spread`. **0 locks all six in unison**; the return to 0 is the piece's largest gesture. Writes the six per-loop tempi, which stay individually editable afterwards. |
 | `master_state` | enum, `access:"read"` | Six characters, one per loop: `.` empty, `S` has a take but stopped, `P` playing, `O` overdubbing, `R` recording. This is where transport state actually lives — the glyphs are constrained by the renderer, not chosen for looks; see below. |
@@ -202,6 +202,29 @@ it sits.
 | `loopN_beats` | float 1–16, step 1 | `period = beats × 60/bpm`. Default 4 — at 100 BPM a 2.4 s loop, long enough to hear as a phrase rather than a flutter. |
 | `loopN_fit` | enum `PAD`/`SPEED`/`RPT` | Below. |
 | `loopN_phase` | float −0.5…+0.5 | Offsets this loop within its own cycle: slide it against the others by hand instead of waiting for it to drift. Slewed ~40 ms so it moves rather than clicks. |
+
+### SYNC MOVE
+
+The only part of the module that looks outside itself, via `get_bpm()` and
+`get_clock_status()` (`plugin_api_v1.h:146,156`). Both are documented as
+nullable on older hosts and every use is guarded.
+
+**The transport is followed on its edges, not its level.** A running transport
+that re-triggered on every block would re-zero all six phases 344 times a
+second, which would make the piece incapable of drifting at all — the one
+thing it exists to do. Only a transition into `RUNNING` starts the ensemble
+and zeroes the phases; only `RUNNING → STOPPED` stops it.
+
+**`UNAVAILABLE` is not `STOPPED`.** It means no clock is configured, so it
+must never silence an ensemble that is already running.
+
+**BASE is re-applied only when the host tempo actually changes.** Re-fanning
+the six on every block would overwrite any loop whose BPM you set by hand,
+making the loop pages effectively read-only in MOVE. Following a tempo should
+not mean that.
+
+**Switching into MOVE adopts the host's current state at once** rather than
+waiting for the next transport edge, which might not come for a whole song.
 
 ### Leading silence is trimmed on close
 
@@ -316,8 +339,9 @@ audio. Same trade Forgetful makes.
 4. ~~Six loops, the SPREAD macro, RSYN, the STATE readout.~~ **done**
 5. ~~SPD and RPT fit modes and their faded companions, PHASE, the Mix
    page.~~ **done**
-6. `SYNC MOVE` against the host transport — still to do, and last because it
-   is the only part that depends on anything outside the module.
+6. ~~`SYNC MOVE` against the host transport.~~ **done**
+
+The build order is complete.
 
 Also unbuilt, in rough order of how much they would add: a per-loop readout of
 where in its cycle each loop currently sits (there is no free cell on a loop

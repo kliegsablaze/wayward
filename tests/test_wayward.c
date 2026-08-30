@@ -29,6 +29,14 @@ extern audio_fx_api_v2_t *move_audio_fx_init_v2(const host_api_v1_t *host);
 
 static int g_failures = 0;
 
+/* A stub host, so the SYNC MOVE paths can actually be driven. The real bench
+ * passes NULL — every host call in the module is guarded — but a guard that
+ * is never taken proves only that it compiles. */
+static int   g_fake_clock = MOVE_CLOCK_STATUS_UNAVAILABLE;
+static float g_fake_bpm   = 120.0f;
+static int   fake_clock_status(void) { return g_fake_clock; }
+static float fake_get_bpm(void)      { return g_fake_bpm; }
+
 static void check(int cond, const char *msg) {
     if (!cond) {
         fprintf(stderr, "FAIL: %s\n", msg);
@@ -965,6 +973,155 @@ int main(void) {
 
         free(mat);
         api->destroy_instance(inst);
+    }
+
+
+    /* ================================================================== */
+    /* SYNC MOVE                                                           */
+    /*                                                                     */
+    /* Last in the file on purpose: move_audio_fx_init_v2 rebinds the      */
+    /* module's host pointer, so everything after this point would see the */
+    /* stub rather than NULL.                                              */
+    /* ================================================================== */
+    {
+        host_api_v1_t fake;
+        memset(&fake, 0, sizeof(fake));
+        fake.get_clock_status = fake_clock_status;
+        fake.get_bpm          = fake_get_bpm;
+
+        audio_fx_api_v2_t *hapi = move_audio_fx_init_v2(&fake);
+        check(hapi != NULL, "test22: the module re-inits against a host");
+
+        /* ---- FREE ignores the transport entirely ---------------------- */
+        {
+            void *inst = hapi->create_instance(NULL, NULL);
+            g_fake_clock = MOVE_CLOCK_STATUS_RUNNING;
+            g_fake_bpm   = 140.0f;
+            run_silence(hapi, inst, FRAMES * 4);
+
+            hapi->get_param(inst, "master_play", buf, sizeof(buf));
+            check(strcmp(buf, "PLAY") == 0,
+                  "test22: in FREE a running host transport starts nothing");
+            hapi->get_param(inst, "master_base", buf, sizeof(buf));
+            check(strcmp(buf, "100") == 0,
+                  "test22: and the host tempo does not touch BASE");
+            hapi->destroy_instance(inst);
+        }
+
+        /* ---- switching to MOVE adopts what the host is doing now ------- */
+        {
+            void *inst = hapi->create_instance(NULL, NULL);
+            g_fake_clock = MOVE_CLOCK_STATUS_RUNNING;
+            g_fake_bpm   = 120.0f;
+
+            hapi->set_param(inst, "master_sync", "MOVE");
+            hapi->get_param(inst, "master_play", buf, sizeof(buf));
+            check(strcmp(buf, "STOP") == 0,
+                  "test23: switching into MOVE against a running transport\n"
+                  "        starts at once, rather than waiting for the next\n"
+                  "        transport edge that may never come");
+            hapi->get_param(inst, "master_base", buf, sizeof(buf));
+            check(strcmp(buf, "120") == 0, "test23: BASE adopts the host tempo");
+            hapi->get_param(inst, "loop6_bpm", buf, sizeof(buf));
+            check(strcmp(buf, "125") == 0,
+                  "test23: and SPREAD fans the six out from it — 120..125");
+            hapi->destroy_instance(inst);
+        }
+
+        /* ---- the transport is followed on its EDGES ------------------- */
+        {
+            void *inst = hapi->create_instance(NULL, NULL);
+            g_fake_clock = MOVE_CLOCK_STATUS_STOPPED;
+            g_fake_bpm   = 100.0f;
+            hapi->set_param(inst, "master_sync", "MOVE");
+            run_silence(hapi, inst, FRAMES * 2);
+            hapi->get_param(inst, "master_play", buf, sizeof(buf));
+            check(strcmp(buf, "PLAY") == 0, "test24: stopped host, stopped ensemble");
+
+            g_fake_clock = MOVE_CLOCK_STATUS_RUNNING;
+            run_silence(hapi, inst, FRAMES * 2);
+            hapi->get_param(inst, "master_play", buf, sizeof(buf));
+            check(strcmp(buf, "STOP") == 0, "test24: transport start starts it");
+
+            /* A running transport must not RE-zero every block. Stopping the
+             * ensemble by hand and leaving the transport running must leave
+             * it stopped — if the level were followed instead of the edge,
+             * the next block would restart it. */
+            hapi->set_param(inst, "master_play", "GO");
+            run_silence(hapi, inst, FRAMES * 8);
+            hapi->get_param(inst, "master_play", buf, sizeof(buf));
+            check(strcmp(buf, "PLAY") == 0,
+                  "test24: the transport is followed on its EDGES — a running\n"
+                  "        one does not re-trigger on every block, which would\n"
+                  "        re-zero all six phases forever and make the piece\n"
+                  "        incapable of drifting at all");
+
+            g_fake_clock = MOVE_CLOCK_STATUS_STOPPED;
+            run_silence(hapi, inst, FRAMES * 2);
+            g_fake_clock = MOVE_CLOCK_STATUS_RUNNING;
+            run_silence(hapi, inst, FRAMES * 2);
+            hapi->get_param(inst, "master_play", buf, sizeof(buf));
+            check(strcmp(buf, "STOP") == 0,
+                  "test24: cycling the transport starts it again");
+            hapi->destroy_instance(inst);
+        }
+
+        /* ---- an unavailable clock is not a stopped one ----------------- */
+        {
+            void *inst = hapi->create_instance(NULL, NULL);
+            g_fake_clock = MOVE_CLOCK_STATUS_RUNNING;
+            hapi->set_param(inst, "master_sync", "MOVE");
+            run_silence(hapi, inst, FRAMES * 2);
+
+            g_fake_clock = MOVE_CLOCK_STATUS_UNAVAILABLE;
+            run_silence(hapi, inst, FRAMES * 4);
+            hapi->get_param(inst, "master_play", buf, sizeof(buf));
+            check(strcmp(buf, "STOP") == 0,
+                  "test25: a clock going UNAVAILABLE means none is configured,\n"
+                  "        not that one has stopped — it must not silence an\n"
+                  "        ensemble that is already running");
+            hapi->destroy_instance(inst);
+        }
+
+        /* ---- a hand-set loop tempo survives until the song tempo moves -- */
+        {
+            void *inst = hapi->create_instance(NULL, NULL);
+            g_fake_clock = MOVE_CLOCK_STATUS_STOPPED;
+            g_fake_bpm   = 100.0f;
+            hapi->set_param(inst, "master_sync", "MOVE");
+            run_silence(hapi, inst, FRAMES * 2);
+
+            hapi->set_param(inst, "loop3_bpm", "77");
+            run_silence(hapi, inst, FRAMES * 16);
+            hapi->get_param(inst, "loop3_bpm", buf, sizeof(buf));
+            check(strcmp(buf, "77") == 0,
+                  "test26: BASE is re-applied only when the host tempo CHANGES,\n"
+                  "        so a loop set by hand is not overwritten every block —\n"
+                  "        following a tempo must not make the loop pages\n"
+                  "        read-only");
+
+            g_fake_bpm = 90.0f;
+            run_silence(hapi, inst, FRAMES * 2);
+            hapi->get_param(inst, "loop3_bpm", buf, sizeof(buf));
+            check(strcmp(buf, "92") == 0,
+                  "test26: but a real tempo change does re-fan all six");
+            hapi->destroy_instance(inst);
+        }
+
+        /* ---- a host with neither call must not crash ------------------- */
+        {
+            host_api_v1_t bare;
+            memset(&bare, 0, sizeof(bare));
+            audio_fx_api_v2_t *bapi = move_audio_fx_init_v2(&bare);
+            void *inst = bapi->create_instance(NULL, NULL);
+            bapi->set_param(inst, "master_sync", "MOVE");
+            run_silence(bapi, inst, FRAMES * 4);
+            bapi->get_param(inst, "master_play", buf, sizeof(buf));
+            check(strcmp(buf, "PLAY") == 0,
+                  "test27: an older host with no get_bpm and no clock is\n"
+                  "        survivable — both are documented nullable");
+            bapi->destroy_instance(inst);
+        }
     }
 
     /* A pass line that prints unconditionally is how a red suite reads

@@ -18,10 +18,10 @@ fall out of step instead.
 See [DESIGN.md](DESIGN.md) for the interaction model, the phasing maths, and
 the DSP architecture.
 
-> **Status: early but playing.** Recording, windowing, the period counter, all
-> six loops, the fit modes and the mixer are built and tested. Still missing:
-> `SYNC MOVE`, which locks the ensemble to the Move's transport. See the build
-> order in DESIGN.md.
+> **Status: feature complete, unreleased.** Everything in the design is built
+> and tested — recording, windowing, the period counter, all six loops, the fit
+> modes, the mixer, and transport sync. It has not been through much playing
+> yet, and it is not in the Module Store.
 
 ## Installing
 

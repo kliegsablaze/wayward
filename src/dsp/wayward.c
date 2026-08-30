@@ -14,9 +14,6 @@
  * neither one touches the recording. Six of those, at tempi a beat or two
  * apart, is the whole instrument.
  *
- * Not yet built: SYNC MOVE, which is the only part that reaches outside the
- * module (step 6 of the build order in DESIGN.md).
- *
  * PAGES (one ui_hierarchy level each; the host renders 8 knobs per page,
  * 4 across x 2 rows):
  *
@@ -171,6 +168,8 @@ static const char *const FIT_LABELS[]  = {
 
 static const char *const SYNC_LABELS[] = { "FREE", "MOVE" };
 #define SYNC_COUNT 2
+#define SYNC_FREE  0
+#define SYNC_MOVE  1
 
 /* Triggers: any write that is not the idle spelling fires them. */
 static const char *const TRIGGER_OPTIONS_JSON = "[\"-\",\"GO\"]";
@@ -271,6 +270,12 @@ typedef struct {
 
     float dry_cur, out_cur;   /* chased, as the per-loop gains are */
 
+    /* SYNC MOVE. The clock status last seen, so the transport is followed on
+     * its EDGES rather than its level — otherwise a running transport would
+     * re-zero every phase on every block, which is the one thing the piece
+     * must never do. */
+    int   prev_clock;
+
     uint64_t total_frames;
 } inst_t;
 
@@ -323,6 +328,60 @@ static void apply_spread(inst_t *s) {
 
 static void zero_all_phases(inst_t *s) {
     for (int i = 0; i < NUM_LOOPS; i++) s->loops[i].pos = 0.0;
+}
+
+/* ------------------------------------------------------------------ */
+/* SYNC MOVE — the only part of this module that looks outside itself   */
+/* ------------------------------------------------------------------ */
+
+/* Take the host's tempo as BASE, and fan the six out from it as usual.
+ *
+ * Only when the rounded tempo has actually CHANGED, so that a per-loop BPM
+ * set by hand survives until the song tempo moves. Re-applying every block
+ * would make the loop pages read-only in MOVE, which is not what following a
+ * tempo should mean. */
+static void follow_host_bpm(inst_t *s) {
+    if (!g_host || !g_host->get_bpm) return;
+    const float b = clampf(roundf(g_host->get_bpm()), MIN_BPM, MAX_BPM);
+    if (b != s->base_bpm) {
+        s->base_bpm = b;
+        apply_spread(s);
+    }
+}
+
+/* Follow the transport on its edges. UNAVAILABLE means no clock is
+ * configured at all, which is not the same as a stopped one — it must not
+ * stop an ensemble that is already running. */
+static void follow_host_clock(inst_t *s) {
+    if (!g_host || !g_host->get_clock_status) return;
+    const int cur = g_host->get_clock_status();
+    if (cur == s->prev_clock) return;
+
+    if (cur == MOVE_CLOCK_STATUS_RUNNING) {
+        s->playing = 1;
+        zero_all_phases(s);      /* the shared moment the piece drifts from */
+    } else if (cur == MOVE_CLOCK_STATUS_STOPPED
+               && s->prev_clock == MOVE_CLOCK_STATUS_RUNNING) {
+        s->playing = 0;
+    }
+    s->prev_clock = cur;
+}
+
+/* Switching INTO MOVE adopts whatever the host is doing right now, rather
+ * than waiting for the next transport edge — otherwise turning the knob mid
+ * song would appear to do nothing at all until the transport was cycled. */
+static void adopt_host(inst_t *s) {
+    if (!g_host) return;
+    follow_host_bpm(s);
+    s->prev_clock = g_host->get_clock_status
+                  ? g_host->get_clock_status()
+                  : MOVE_CLOCK_STATUS_UNAVAILABLE;
+    if (s->prev_clock == MOVE_CLOCK_STATUS_RUNNING) {
+        s->playing = 1;
+        zero_all_phases(s);
+    } else if (s->prev_clock == MOVE_CLOCK_STATUS_STOPPED) {
+        s->playing = 0;
+    }
 }
 
 static void init_loop(loop_t *loop) {
@@ -485,7 +544,7 @@ static void *v2_create_instance(const char *dir, const char *cfg) {
     if (!s) return NULL;
 
     s->playing   = 0;
-    s->sync_mode = 0;               /* FREE */
+    s->sync_mode = SYNC_FREE;
     s->base_bpm  = DEFAULT_BPM;
     s->spread    = DEFAULT_SPREAD;  /* 100..105 out of the box */
     s->dry       = 1.0f;            /* an fx that silences its input is a bug */
@@ -493,6 +552,7 @@ static void *v2_create_instance(const char *dir, const char *cfg) {
     s->widen     = 0.5f;
     s->dry_cur   = s->dry;
     s->out_cur   = s->out;
+    s->prev_clock = MOVE_CLOCK_STATUS_UNAVAILABLE;
 
     for (int i = 0; i < NUM_LOOPS; i++) {
         init_loop(&s->loops[i]);
@@ -647,6 +707,11 @@ static void prepass(inst_t *s, loop_t *lp, int index) {
 static void v2_process_block(void *instance, int16_t *lr, int frames) {
     inst_t *s = (inst_t *)instance;
     if (!s || !lr || frames <= 0) return;
+
+    if (s->sync_mode == SYNC_MOVE) {
+        follow_host_bpm(s);
+        follow_host_clock(s);
+    }
 
     s->dry_cur += (s->dry - s->dry_cur) * GAIN_SLEW;
     s->out_cur += (s->out - s->out_cur) * GAIN_SLEW;
@@ -888,8 +953,10 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
         return;
     }
     if (strcmp(key, "master_sync") == 0) {
+        const int before = s->sync_mode;
         s->sync_mode = enum_index_from(val, SYNC_LABELS, SYNC_COUNT,
                                        s->sync_mode);
+        if (s->sync_mode == SYNC_MOVE && before != SYNC_MOVE) adopt_host(s);
         return;
     }
     if (strcmp(key, "master_base") == 0) {
@@ -1156,8 +1223,10 @@ static int v2_get_param(void *instance, const char *key, char *buf, int len) {
 /* ------------------------------------------------------------------ */
 
 audio_fx_api_v2_t *move_audio_fx_init_v2(const host_api_v1_t *host) {
+    /* SYNC MOVE reaches for get_bpm and get_clock_status through this. Both
+     * are documented as nullable on older hosts, and `host` itself is NULL
+     * under the bench tests, so every use is guarded. */
     g_host = host;
-    (void)g_host;   /* SYNC MOVE reaches for get_bpm/get_clock_status in step 6 */
 
     memset(&g_api, 0, sizeof(g_api));
     g_api.api_version      = AUDIO_FX_API_VERSION_2;
