@@ -5,13 +5,17 @@
  * BPM and they slide out of alignment and back over minutes — the Reich /
  * Eno / Basinski tape-loop mechanism, on eight knobs.
  *
- * THIS FILE IS CURRENTLY THE SKELETON (step 1 of the build order in
- * DESIGN.md). It declares the complete control surface — every parameter and
- * all eight pages — and holds the parameter state and the record/play state
- * machine, so the whole UI can be walked on the device. process_block is
- * still a pure passthrough: no recording, no loop playback. The buffers are
- * nevertheless allocated at full size, so that the 31.7 MB footprint is
- * proven on real hardware before any DSP depends on it.
+ * THE ENGINE, in one paragraph. Each loop holds three numbers: the WINDOW
+ * that START and END cut out of its take (W frames), the PERIOD its tempo
+ * asks for (P frames, beats * 60/bpm * 44100), and a position counting
+ * frames into the current cycle and wrapping at P. Playback reads the take
+ * while the position is inside the window and emits silence past it, so
+ * "pad with silence" and "cut off at the wrap" are the same arithmetic and
+ * neither one touches the recording. Six of those, at tempi a beat or two
+ * apart, is the whole instrument.
+ *
+ * Not yet built: SYNC MOVE, which is the only part that reaches outside the
+ * module (step 6 of the build order in DESIGN.md).
  *
  * PAGES (one ui_hierarchy level each; the host renders 8 knobs per page,
  * 4 across x 2 rows):
@@ -21,9 +25,9 @@
  *   Loop 1  REC   TRIG  START END   /  BPM   BEAT  FIT   PHAS
  *   ...     (Loop 2..6 identical)
  *
- * Eight sections is one more than Forgetful ships, and the page planner has
- * not been proven at that count — the first thing to confirm on device is
- * that all eight appear in the bank bar, before any DSP is written.
+ * Eight sections is one more than Forgetful ships. drawBankBar handles any
+ * page count up to the display width and the planner caps levels nowhere,
+ * so this is fine; it was checked before the pages were built.
  *
  * HOUSE RULES INHERITED FROM FORGETFUL, each learned the hard way there:
  *
@@ -94,8 +98,24 @@
 #define MAX_SPREAD       12.0f
 #define DEFAULT_SPREAD   1.0f
 
-/* A window shorter than this is not a loop, it is a click. */
+/* A take shorter than this is not a loop, it is a click. */
 #define MIN_WINDOW_FRAMES ((int)(SAMPLE_RATE * 0.05f))
+
+/* The envelope the F modes apply at each end of the window. Five
+ * milliseconds is long enough to swallow a splice and short enough not to
+ * soften a transient audibly. */
+#define FADE_SECONDS     0.005f
+
+/* An overdub head moving at anything but one frame per frame skips indices;
+ * left alone that writes a comb into the take permanently. The gap gets
+ * filled, but only up to this many frames — beyond it the head has jumped
+ * (a wrap, a knob), and filling would smear the new input across the take. */
+#define OVERDUB_MAX_FILL 64
+
+/* Per-block chase coefficients. At 128 frames a block these are roughly a
+ * 12 ms gain glide and a 40 ms phase glide. */
+#define GAIN_SLEW        0.25f
+#define PHASE_SLEW       0.08f
 
 typedef struct { int16_t l, r; } frame16_t;
 
@@ -176,10 +196,37 @@ typedef struct {
     float phase_off;   /* -0.5..+0.5 of a cycle */
     float volume;
 
-    double phase;      /* 0..1, advanced by 1/period_frames each sample */
+    /* Playback position, in FRAMES INTO THE CYCLE, wrapping at `period`.
+     *
+     * Not a normalised 0..1 phase, which is what this was first: with a
+     * normalised phase the read position is phase * period, so turning BPM
+     * SCALES it and teleports the playhead through the take — in PAD mode
+     * far enough to jump from inside the window to outside it, cutting the
+     * sound dead mid-note. Counting frames instead leaves the playhead
+     * exactly where it is when the period changes; only the wrap point
+     * moves. */
+    double pos;
 
     int    audition;      /* one-shot TRIG in flight */
     double audition_pos;  /* frames into the window */
+
+    /* Chased once per block, so a knob step never lands straight on a
+     * multiply — that is what a zipper is. */
+    float  vol_cur;
+    float  phase_off_cur;
+
+    /* Resolved once per block by the prepass, read every frame. */
+    double w_lo, w_hi;    /* the window's bounds inside the take */
+    double span;          /* w_hi - w_lo; 0 means this loop is silent */
+    int    reversed;      /* END below centre: travel from w_hi down to w_lo */
+    double period;        /* frames per cycle, beats * 60/bpm * SR */
+
+    double fade;          /* frames of envelope at each end, F modes only */
+    float  gl, gr;        /* stereo placement, from WIDEN */
+
+    /* Where the overdub last wrote, so a head moving faster than one frame
+     * per frame can fill the gap it jumped rather than leaving a comb. */
+    int    od_last_idx;
 } loop_t;
 
 typedef struct {
@@ -192,6 +239,8 @@ typedef struct {
     float dry;
     float out;
     float widen;
+
+    float dry_cur, out_cur;   /* chased, as the per-loop gains are */
 
     uint64_t total_frames;
 } inst_t;
@@ -244,7 +293,7 @@ static void apply_spread(inst_t *s) {
 }
 
 static void zero_all_phases(inst_t *s) {
-    for (int i = 0; i < NUM_LOOPS; i++) s->loops[i].phase = 0.0;
+    for (int i = 0; i < NUM_LOOPS; i++) s->loops[i].pos = 0.0;
 }
 
 static void init_loop(loop_t *loop) {
@@ -261,9 +310,16 @@ static void init_loop(loop_t *loop) {
     loop->fit             = FIT_PAD;
     loop->phase_off       = 0.0f;
     loop->volume          = 0.8f;
-    loop->phase           = 0.0;
+    loop->pos             = 0.0;
     loop->audition        = 0;
     loop->audition_pos    = 0.0;
+    loop->vol_cur         = loop->volume;
+    loop->phase_off_cur   = 0.0f;
+    loop->w_lo = loop->w_hi = 0.0;
+    loop->span = loop->period = loop->fade = 0.0;
+    loop->reversed        = 0;
+    loop->gl = loop->gr   = 1.0f;
+    loop->od_last_idx     = -1;
 }
 
 /* ------------------------------------------------------------------ */
@@ -344,6 +400,10 @@ static void close_recording(loop_t *loop) {
     loop->start_frac      = 0.0f;
     loop->end_frac        = 1.0f;   /* the whole take, forwards */
     loop->overdubbing     = 0;
+    loop->od_last_idx     = -1;
+    /* The take begins its cycle the moment it closes, rather than waiting
+     * for the ensemble's next wrap: press stop and the loop is running. */
+    loop->pos             = 0.0;
     loop->state           = LOOP_LOADED;
 }
 
@@ -382,6 +442,8 @@ static void *v2_create_instance(const char *dir, const char *cfg) {
     s->dry       = 1.0f;            /* an fx that silences its input is a bug */
     s->out       = 0.8f;
     s->widen     = 0.5f;
+    s->dry_cur   = s->dry;
+    s->out_cur   = s->out;
 
     for (int i = 0; i < NUM_LOOPS; i++) {
         init_loop(&s->loops[i]);
@@ -412,12 +474,281 @@ static void v2_destroy_instance(void *instance) {
 /* Audio                                                               */
 /* ------------------------------------------------------------------ */
 
-/* SKELETON: bit-exact passthrough. The loop engine lands in step 2 of the
- * build order; until then this exists so the module can sit in a chain
- * without altering the signal while the control surface is walked. */
+/* Cubic soft clipper. Unity slope through zero, reaching exactly +-1 with
+ * zero slope at +-1.5, so it rounds an overshoot instead of folding it. Six
+ * loops plus the live input overshoot easily once the faders are up.
+ *
+ * The linear region is left EXACT rather than merely near-unity, because the
+ * idle case — nothing recorded, DRY at full — has to come out bit for bit
+ * what went in. An effect that alters the signal while doing nothing is a
+ * bug, and process_block skips the write entirely in that case (see below);
+ * this keeps the arithmetic honest for everything short of it. */
+static float softclip(float x) {
+    if (x <= -1.5f) return -1.0f;
+    if (x >=  1.5f) return  1.0f;
+    return x - (4.0f / 27.0f) * x * x * x;
+}
+
+static int16_t f_to_i16(float v) {
+    v *= 32768.0f;
+    if (v >  32767.0f) v =  32767.0f;
+    if (v < -32768.0f) v = -32768.0f;
+    return (int16_t)v;
+}
+
+/* Linearly interpolated read at a fractional frame position in the take.
+ * The position is clamped rather than wrapped: every caller has already
+ * confined it to the window, and a wrap here would quietly paper over a bug
+ * in that arithmetic. */
+static void read_frame(const loop_t *loop, double rp, float *l, float *r) {
+    const int len = loop->recorded_length;
+    if (rp < 0.0) rp = 0.0;
+    if (rp > (double)(len - 1)) rp = (double)(len - 1);
+    const int i0 = (int)rp;
+    int i1 = i0 + 1;
+    if (i1 >= len) i1 = len - 1;
+    const float f = (float)(rp - (double)i0);
+    const frame16_t a = loop->buffer[i0];
+    const frame16_t b = loop->buffer[i1];
+    *l = ((float)a.l + ((float)b.l - (float)a.l) * f) * (1.0f / 32768.0f);
+    *r = ((float)a.r + ((float)b.r - (float)a.r) * f) * (1.0f / 32768.0f);
+}
+
+/* Sum new input into the take at one index, saturating. Overdub ADDS — the
+ * take is meant to accumulate pass after pass. */
+static void overdub_write(loop_t *loop, int i, int16_t l, int16_t r) {
+    int nl = (int)loop->buffer[i].l + (int)l;
+    int nr = (int)loop->buffer[i].r + (int)r;
+    if (nl >  32767) nl =  32767;
+    if (nl < -32768) nl = -32768;
+    if (nr >  32767) nr =  32767;
+    if (nr < -32768) nr = -32768;
+    loop->buffer[i].l = (int16_t)nl;
+    loop->buffer[i].r = (int16_t)nr;
+}
+
+/* The envelope the F modes apply, as a gain for a position within the span.
+ * Both ends, not only the tail: a fade-out alone still leaves the window's
+ * first frame stepping away from silence, which clicks exactly as loudly as
+ * the seam it was meant to fix. */
+static float window_gain(const loop_t *loop, double idx) {
+    if (loop->fade <= 0.0) return 1.0f;
+    float g = 1.0f;
+    if (idx < loop->fade) g = (float)(idx / loop->fade);
+    const double tail = loop->span - idx;
+    if (tail < loop->fade) {
+        const float t = (float)(tail / loop->fade);
+        if (t < g) g = t;
+    }
+    return g < 0.0f ? 0.0f : g;
+}
+
+/* Once per block per loop: everything that would otherwise be recomputed
+ * 128 times for no reason — the window bounds, the period, the fade length,
+ * the stereo placement — plus the gain chases. */
+static void prepass(inst_t *s, loop_t *lp, int index) {
+    lp->vol_cur       += (lp->volume    - lp->vol_cur)       * GAIN_SLEW;
+    lp->phase_off_cur += (lp->phase_off - lp->phase_off_cur) * PHASE_SLEW;
+
+    /* WIDEN fans the six evenly about the centre. Constant power, scaled so
+     * that WIDEN 0 leaves every loop at unity: without that, closing the
+     * spread would quietly drop the ensemble 3 dB. */
+    float pos = ((float)index - (NUM_LOOPS - 1) * 0.5f) / ((NUM_LOOPS - 1) * 0.5f);
+    pos *= s->widen;
+    const float ang = (pos + 1.0f) * 0.25f * 3.14159265358979f;
+    lp->gl = cosf(ang) * 1.41421356f;
+    lp->gr = sinf(ang) * 1.41421356f;
+
+    lp->span = 0.0;
+    if (lp->state != LOOP_LOADED || lp->recorded_length < 2) return;
+
+    const double len = (double)lp->recorded_length;
+    const double start = (double)clampf(lp->start_frac, 0.0f, 1.0f) * len;
+    const double e = (double)clampf(lp->end_frac, -1.0f, 1.0f);
+
+    /* END is a signed LENGTH from START, so the two halves of the knob are
+     * mirror images and there is no ordering to enforce. */
+    if (e >= 0.0) {
+        lp->w_lo = start;
+        lp->w_hi = start + e * (len - start);
+        lp->reversed = 0;
+    } else {
+        lp->w_lo = start + e * start;   /* e is negative: this walks back */
+        lp->w_hi = start;
+        lp->reversed = 1;
+    }
+    if (lp->w_lo < 0.0) lp->w_lo = 0.0;
+    if (lp->w_hi > len) lp->w_hi = len;
+
+    lp->span = lp->w_hi - lp->w_lo;
+    /* The centre detent is meant to be silent, so a vanishing window is not
+     * clamped up to some minimum — it is simply not heard. */
+    if (lp->span < 2.0) { lp->span = 0.0; return; }
+
+    double period = (double)lp->beats * (60.0 / (double)lp->bpm) * (double)SAMPLE_RATE;
+    if (period < 2.0) period = 2.0;
+    lp->period = period;
+
+    double fade = FIT_IS_FADED(lp->fit) ? (double)(FADE_SECONDS * SAMPLE_RATE) : 0.0;
+    if (fade > lp->span * 0.25) fade = lp->span * 0.25;
+    lp->fade = fade;
+}
+
 static void v2_process_block(void *instance, int16_t *lr, int frames) {
     inst_t *s = (inst_t *)instance;
     if (!s || !lr || frames <= 0) return;
+
+    s->dry_cur += (s->dry - s->dry_cur) * GAIN_SLEW;
+    s->out_cur += (s->out - s->out_cur) * GAIN_SLEW;
+    for (int i = 0; i < NUM_LOOPS; i++) prepass(s, &s->loops[i], i);
+
+    for (int n = 0; n < frames; n++) {
+        const int16_t raw_l = lr[2 * n];
+        const int16_t raw_r = lr[2 * n + 1];
+
+        float acc_l = 0.0f, acc_r = 0.0f;
+
+        for (int i = 0; i < NUM_LOOPS; i++) {
+            loop_t *lp = &s->loops[i];
+
+            if (lp->state == LOOP_RECORDING) {
+                if (lp->write_head < lp->capacity_frames) {
+                    lp->buffer[lp->write_head].l = raw_l;
+                    lp->buffer[lp->write_head].r = raw_r;
+                    lp->write_head++;
+                }
+                /* Running out of buffer closes the take. This is the one
+                 * automatic close: a safety cap, so a forgotten second press
+                 * cannot record forever. */
+                if (lp->write_head >= lp->capacity_frames) close_recording(lp);
+                continue;
+            }
+
+            if (lp->state != LOOP_LOADED || lp->span <= 0.0) {
+                lp->od_last_idx = -1;
+                continue;
+            }
+
+            float sl = 0.0f, sr = 0.0f;
+            int   voiced = 0;
+            int   play_voiced = 0;
+            double rp = 0.0;
+
+            if (s->playing) {
+                /* A period that has just shrunk below where the head already
+                 * is: wrap it back into range rather than leaving it out
+                 * beyond the end of the cycle. */
+                if (lp->pos >= lp->period) lp->pos = fmod(lp->pos, lp->period);
+
+                /* PHASE offsets by a fraction of a CYCLE, so the nudge means
+                 * the same musical amount whatever the tempo. */
+                double posf = lp->pos + (double)lp->phase_off_cur * lp->period;
+                posf -= lp->period * floor(posf / lp->period);
+
+                double idx = 0.0;
+                int inside = 1;
+
+                switch (lp->fit) {
+                case FIT_PAD:
+                case FIT_PAD_F:
+                    /* Padding and truncation are the SAME arithmetic: run off
+                     * the end of the window and emit silence until the wrap;
+                     * or wrap before reaching the end and never hear the
+                     * tail. */
+                    idx = posf;
+                    inside = (idx < lp->span);
+                    break;
+                case FIT_SPD:
+                case FIT_SPD_F:
+                    /* Varispeed: the window is stretched over the whole
+                     * cycle, so it exactly fills it and the pitch moves. */
+                    idx = (posf / lp->period) * lp->span;
+                    break;
+                default:
+                    idx = fmod(posf, lp->span);
+                    break;
+                }
+
+                if (inside) {
+                    rp = lp->reversed ? (lp->w_hi - idx) : (lp->w_lo + idx);
+                    read_frame(lp, rp, &sl, &sr);
+                    const float g = window_gain(lp, idx);
+                    sl *= g;
+                    sr *= g;
+                    voiced = play_voiced = 1;
+                }
+
+                /* READ AT THE CURRENT POSITION, ADVANCE AFTERWARDS.
+                 *
+                 * Advancing first costs the window its first frame: the
+                 * cycle would begin at index 1, and frame 0 — exactly where
+                 * a transient sits once START is placed on one — would never
+                 * be read at all. */
+                lp->pos += 1.0;
+                if (lp->pos >= lp->period) lp->pos -= lp->period;
+            }
+
+            /* TRIG is a one-shot audition and deliberately ignores both the
+             * period and the transport: it exists to tell you what you
+             * caught, which you need to know while stopped. */
+            if (lp->audition) {
+                if (lp->audition_pos >= lp->span) {
+                    lp->audition = 0;
+                } else {
+                    const double a = lp->audition_pos;
+                    const double arp = lp->reversed ? (lp->w_hi - a) : (lp->w_lo + a);
+                    float al, ar;
+                    read_frame(lp, arp, &al, &ar);
+                    const float g = window_gain(lp, a);
+                    sl += al * g;
+                    sr += ar * g;
+                    lp->audition_pos += 1.0;
+                    voiced = 1;
+                }
+            }
+
+            /* Overdub writes at the position being READ, so a new pass lands
+             * on top of the old one rather than beside it. */
+            if (lp->overdubbing && play_voiced) {
+                const int cur = (int)(rp + 0.5);
+                if (cur >= 0 && cur < lp->recorded_length) {
+                    if (lp->od_last_idx >= 0 && lp->od_last_idx != cur) {
+                        const int d = cur - lp->od_last_idx;
+                        const int ad = d < 0 ? -d : d;
+                        if (ad > 1 && ad <= OVERDUB_MAX_FILL) {
+                            const int step = d > 0 ? 1 : -1;
+                            for (int k = lp->od_last_idx + step; k != cur; k += step)
+                                overdub_write(lp, k, raw_l, raw_r);
+                        }
+                    }
+                    overdub_write(lp, cur, raw_l, raw_r);
+                    lp->od_last_idx = cur;
+                }
+            } else {
+                lp->od_last_idx = -1;
+            }
+
+            if (voiced) {
+                acc_l += sl * lp->vol_cur * lp->gl;
+                acc_r += sr * lp->vol_cur * lp->gr;
+            }
+        }
+
+        /* NOTHING TO ADD, NOTHING TO TOUCH.
+         *
+         * With no loop sounding and DRY at full, the block is left exactly
+         * as it arrived — not merely multiplied by one and rounded back,
+         * which would cost a bit of the signal every time the module sat
+         * idle in a chain. */
+        if (acc_l == 0.0f && acc_r == 0.0f && s->dry_cur >= 1.0f) continue;
+
+        const float dl = (float)raw_l * (1.0f / 32768.0f) * s->dry_cur;
+        const float dr = (float)raw_r * (1.0f / 32768.0f) * s->dry_cur;
+
+        lr[2 * n]     = f_to_i16(softclip(dl + acc_l * s->out_cur));
+        lr[2 * n + 1] = f_to_i16(softclip(dr + acc_r * s->out_cur));
+    }
+
     s->total_frames += (uint64_t)frames;
 }
 

@@ -27,14 +27,15 @@ Per loop, everything follows from three quantities:
 |---|---|
 | **window** | the slice of the recording that START/END select, `W` frames |
 | **period** | `beats × 60/bpm × 44100` frames — how often the loop restarts, `P` |
-| **phase** | a `double` in `[0,1)`, advanced by `1/P` each frame, wrapped at 1 |
+| **position** | a `double` counting frames into the current cycle, wrapped at `P` |
 
 Playback is then one line, with no buffer editing, no reallocation and no
 copying:
 
 ```
-read = phase * P                    /* frames into the current cycle */
-out  = (read < W) ? buffer[start + read] : 0
+pos += 1                            /* frames into the current cycle */
+if pos >= P: pos -= P               /* the loop restarting */
+out = (pos < W) ? buffer[start + pos] : 0
 ```
 
 Padding and truncation are the *same code*. If `P > W`, the counter runs off
@@ -44,14 +45,24 @@ never heard — that is the truncation. Nothing is copied, nothing is allocated,
 and the take on disk is never touched, so you can sweep the BPM knob all day
 without damaging what you recorded.
 
-**Phase is normalised (`0..1`), not an absolute frame count.** This matters
-under the hand: turning BPM then keeps the loop at the same *proportional*
-position in its cycle rather than jumping.
+**The position counts frames; it is NOT a normalised 0..1 phase.** This was
+the other way round first, on the reasoning that a normalised phase keeps the
+loop at the same *proportional* point in its cycle when the tempo changes. It
+does — and that is the wrong continuity to preserve. With a normalised phase
+the read position is `phase × P`, so turning BPM **scales** it and teleports
+the playhead through the take; in PAD mode far enough to jump from inside the
+window to outside it, cutting a note dead. Counting frames leaves the playhead
+exactly where it is when the period changes, and moves only the point at which
+it wraps. `test18` sweeps BPM under the hand and measures the largest step in
+the output; it fails outright on the normalised version.
 
 **The period is not a whole number of frames.** `4 × 60/101 × 44100` is
-104,792.08. Hence `double`, both for the phase and for the increment; an
-integer counter would leave each loop a fraction of a frame out per cycle and
-drift in a way nobody asked for.
+104,792.08. Hence a `double` position; an integer counter would leave each
+loop a fraction of a frame out per cycle and drift in a way nobody asked for.
+It also means a one-frame impulse is read at a fractional index and
+interpolated with whatever sits beside it — which is why the period tests use
+a 32-frame burst, having first been written with a single frame that vanished
+on about half the cycles.
 
 ### Why whole-number tempi
 
@@ -270,15 +281,19 @@ audio. Same trade Forgetful makes.
 
 ## Build order
 
-1. **Skeleton** — passes audio through unchanged, answers `chain_params` and
-   `ui_hierarchy`, holds all parameter state and the record state machine.
-   Gets all eight pages onto the device before any DSP exists. ← *done*
-2. Record and window playback on one loop: REC, START, END, TRIG.
-3. The period counter: BPM, BEAT, PAD fit, global PLAY.
-4. Six loops, the SPREAD macro, RSYN, the STATE readout.
-5. SPEED and RPT fit modes, PHASE, the Mix page.
-6. `SYNC MOVE` against the host transport — last, because it is the only part
-   that depends on anything outside the module.
+1. ~~Skeleton — the control surface, all eight pages, no DSP.~~ **done**
+2. ~~Record and window playback: REC, START, END, TRIG.~~ **done**
+3. ~~The period counter: BPM, BEAT, PAD fit, global PLAY.~~ **done**
+4. ~~Six loops, the SPREAD macro, RSYN, the STATE readout.~~ **done**
+5. ~~SPD and RPT fit modes and their faded companions, PHASE, the Mix
+   page.~~ **done**
+6. `SYNC MOVE` against the host transport — still to do, and last because it
+   is the only part that depends on anything outside the module.
+
+Also unbuilt, in rough order of how much they would add: a per-loop readout of
+where in its cycle each loop currently sits (there is no free cell on a loop
+page for it), and the realignment countdown the phasing maths makes
+computable.
 
 
 ## Testing
@@ -290,20 +305,25 @@ count, buffer headroom, every key on exactly one page), unknown keys never
 returning `-1`, bit-exact passthrough, the SPREAD macro, enum wire format in
 both directions, the record state machine, transport, and parameter clamping.
 
-Arriving with the DSP:
+Now also covering the engine, all asserted on the output audio rather than on
+internals:
 
-- **Period arithmetic** — at 100 BPM × 4 beats a loop wraps every 105,840
-  frames ±1. Asserted on the audio: feed a click, count frames between output
-  clicks.
-- **The phasing property, directly** — two loops at 100 and 101 BPM, a click
-  in each, run for 240 s; the clicks must coincide at the start, be maximally
-  offset at 120 s, and coincide again at 240 s. This is the module's whole
-  reason to exist and it is cheap to assert.
-- **Pad vs trim** — `P > W` must give exact silence in `[W, P)`; `P < W` must
-  never emit a frame past `start + P`.
-- **Fit modes** — `SPEED` has no silent region and its measured pitch scales
-  as `W/P`; `RPT` repeats at `W`.
-- **Click-freeness** across every window edge, repeat seam and PHASE sweep.
+- **Period arithmetic** — a take whose only content is a 32-frame burst fires
+  once per period, so counting bursts measures the period directly. 100 BPM ×
+  4 beats gives 101 bursts in 240 s.
+- **The phasing property** — the same take at 101 BPM completes exactly one
+  more cycle over the same 240 s than at 100. The module's whole reason to
+  exist, asserted in one number.
+- **Pad and trim** — with `P > W`, everything between the end of the window
+  and the wrap is *exact* silence; with `P < W`, a ramp never reaches beyond
+  where the wrap should cut it.
+- **SPD and RPT** leave no gap, unlike PAD.
+- **Reverse** — START at the end and END fully negative turns a rising ramp
+  into a falling one.
+- **The F companions** — a constant take makes every window edge a full-scale
+  step. The raw mode's largest step exceeds 8000; the companion's is under 500.
+- **BPM swept under the hand** produces no jump in the output. This is the
+  test that caught the normalised-phase error described above.
 
 The suite returns non-zero on any failure. A PASS line that prints
 unconditionally is how a red suite reads green.

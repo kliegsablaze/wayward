@@ -18,9 +18,10 @@ fall out of step instead.
 See [DESIGN.md](DESIGN.md) for the interaction model, the phasing maths, and
 the DSP architecture.
 
-> **Status: early.** The control surface and the record state machine are
-> built and the module passes audio through untouched, but the loop engine is
-> not written yet — nothing loops so far. See the build order in DESIGN.md.
+> **Status: early but playing.** Recording, windowing, the period counter, all
+> six loops, the fit modes and the mixer are built and tested. Still missing:
+> `SYNC MOVE`, which locks the ensemble to the Move's transport. See the build
+> order in DESIGN.md.
 
 ## Installing
 
