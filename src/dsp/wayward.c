@@ -17,9 +17,11 @@
  * PAGES (one ui_hierarchy level each; the host renders 8 knobs per page,
  * 4 across x 2 rows):
  *
- *   Main    PLAY  RSYN  CLEAR STATE /  BASE  SPRD  WIDEN ....
- *   Mix     1     2     3     4     /  5     6     DRY   OUT
- *   Loop 1  REC   TRIG  START END   /  BPM   BEAT  FIT   PHAS
+ *   Main    REC 1 REC 2 REC 3 PLAY  /  REC 4 REC 5 REC 6 RSYN
+ *   Orbits  1     2     3     ALIGN /  ....  4     5     6
+ *   Shape   BASE  SPRD  WIDEN ....  /  DRY   OUT   ....  CLEAR
+ *   Mix     1     2     3     ....  /  4     5     6     ....
+ *   Loop 1  TRIG  START END   ....  /  BPM   BEAT  FIT   PHAS
  *   ...     (Loop 2..6 identical)
  *
  * Eight sections is one more than Forgetful ships. drawBankBar handles any
@@ -299,6 +301,10 @@ typedef struct {
 
     float dry_cur, out_cur;   /* chased, as the per-loop gains are */
 
+    /* Frames since every phase was last zeroed together — the instant the
+     * realignment countdown measures from. */
+    uint64_t align_frames;
+
     /* CLEAR in flight: the ensemble is fading toward being wiped. */
     int   clearing;
     float clear_gain;   /* 1 down to 0 across CLEAR_SECONDS */
@@ -356,6 +362,47 @@ static void apply_spread(inst_t *s) {
 
 static void zero_all_phases(inst_t *s) {
     for (int i = 0; i < NUM_LOOPS; i++) s->loops[i].pos = 0.0;
+    s->align_frames = 0;
+}
+
+static int igcd(int a, int b) {
+    if (a < 0) a = -a;
+    if (b < 0) b = -b;
+    while (b) { const int t = a % b; a = b; b = t; }
+    return a;
+}
+
+/* HOW LONG UNTIL EVERY LOADED LOOP COINCIDES AGAIN, in seconds.
+ *
+ * A loop's period is beats * 60/bpm seconds, so with whole-number tempi the
+ * periods are rational and their common multiple is exact arithmetic rather
+ * than a search: reduce each beats/bpm to lowest terms, and the least common
+ * multiple of a set of fractions is lcm(numerators) over gcd(denominators).
+ *
+ * The answer is prettier than it has any right to be. Six loops all at BEAT 4
+ * come back together every 4 x 60 = 240 seconds at ANY whole tempi at all,
+ * because in that time each completes exactly its own BPM count of cycles.
+ * Change one loop's BEAT and the figure moves.
+ *
+ * Returns 0 when nothing is loaded. */
+static double align_period_seconds(const inst_t *s) {
+    int num = 0;          /* lcm of the reduced numerators */
+    int den = 0;          /* gcd of the reduced denominators */
+    for (int i = 0; i < NUM_LOOPS; i++) {
+        const loop_t *lp = &s->loops[i];
+        if (lp->state != LOOP_LOADED || lp->recorded_length < 2) continue;
+        int p = (int)lp->beats;
+        int q = (int)lp->bpm;
+        if (p < 1) p = 1;
+        if (q < 1) q = 1;
+        const int g = igcd(p, q);
+        p /= g;
+        q /= g;
+        num = num ? (num / igcd(num, p)) * p : p;
+        den = den ? igcd(den, q) : q;
+    }
+    if (!num || !den) return 0.0;
+    return 60.0 * (double)num / (double)den;
 }
 
 static void init_loop(loop_t *loop) {
@@ -428,60 +475,70 @@ static void wipe_all(inst_t *s) {
 /* Readouts                                                            */
 /* ------------------------------------------------------------------ */
 
-/* One character per loop, in ensemble order:
- *     .  nothing recorded
- *     S  has a take, ensemble stopped
- *     P  playing
- *     O  overdubbing onto the take while it plays
- *     R  recording right now
+/* WHERE A LOOP IS IN ITS CYCLE, and what it is doing.
  *
- * THE GLYPHS ARE CONSTRAINED BY THE RENDERER, not chosen for looks. Every
- * value goes through enumSquareLines() (schwung's
- * shared/param_pages/font5x3.mjs), which:
+ * This replaces the single six-character STATE readout that used to sit on
+ * Main. That one had to say everything about six loops in six characters; a
+ * cell per loop can say where each one actually IS, which is the thing this
+ * instrument is about.
  *
- *   1. treats "-", "_" and " " as WORD SEPARATORS — "-" whenever it falls
- *      between two alphanumerics — and then keeps only the first three
- *      characters of each of the first two words. This is why "-" cannot be
- *      the empty glyph, however much it wants to be: an ensemble reading
- *      "R-S---" has a hyphen with R on one side and S on the other, so it is
- *      rewritten to "R S---", split, and drawn as "R" over "S--". That is not
- *      a truncated ensemble, it is a WRONG one — characters vanish and every
- *      position after the break shifts, so the readout stops saying which
- *      loop is which. An all-empty "------" survives by accident, no hyphen
- *      there having an alphanumeric on either side, which is exactly how the
- *      fault would look correct until the first take was recorded. "." is the
- *      nearest glyph that means absence and is never a separator.
- *   2. uppercases the value, so a glyph cannot differ from its uppercase twin.
- *   3. sends an all-digit value down a different path entirely.
+ * The vocabulary still carries everything STATE did, because with STATE gone
+ * this is the only place recording is visible at all — a write-only trigger's
+ * cell shows its static label and nothing else:
  *
- * Six characters, no separator, which is also what gets the requested
- * two-rows-of-three for free: if the six do not fit the interior on one line,
- * enumSquareLines falls back to a blind 3+3 slice and the renderer centres
- * both rows — loops 1-3 above loops 4-6, every position intact. */
-static char loop_status_char(const inst_t *s, const loop_t *loop) {
-    if (loop->state == LOOP_RECORDING) return 'R';
-    if (loop->state == LOOP_EMPTY)     return '.';
-    if (!s->playing)                   return 'S';
-    return loop->overdubbing ? 'O' : 'P';
+ *     -      nothing recorded
+ *     REC    recording right now
+ *     S      has a take, ensemble stopped
+ *     0..99  playing, and how far through its cycle it is
+ *     O42    overdubbing, and how far through its cycle it is
+ *
+ * A bare number is safe here: enumSquareLines sends an all-digit value
+ * straight to one line, and a lone "-" has no alphanumeric beside it to be
+ * treated as a word separator. "O42" is neither all digits nor separated, so
+ * it survives whole as well. */
+static int loop_cycle_text(const inst_t *s, const loop_t *loop,
+                           char *buf, int len) {
+    if (loop->state == LOOP_RECORDING) return snprintf(buf, len, "REC");
+    if (loop->state != LOOP_LOADED || loop->recorded_length < 2)
+        return snprintf(buf, len, "-");
+    if (!s->playing) return snprintf(buf, len, "S");
+
+    int pct = 0;
+    if (loop->period > 0.0) {
+        pct = (int)(loop->pos / loop->period * 100.0);
+        if (pct < 0) pct = 0;
+        if (pct > 99) pct = 99;
+    }
+    if (loop->overdubbing) return snprintf(buf, len, "O%d", pct);
+    return snprintf(buf, len, "%d", pct);
 }
 
-static int master_state_text(const inst_t *s, char *buf, int len) {
-    /* A clear in flight displaces the ensemble: for those fifteen seconds
-     * the countdown is the only thing worth reading, and this is the one
-     * cell that can show it. "CLR" and the whole seconds remaining, with no
-     * separator between them, so the renderer either fits it on one line or
-     * splits it exactly as "CLR" over the number. */
+/* Seconds until every loaded loop coincides again — or, while a CLEAR is
+ * running, the countdown to the wipe. The clear borrows this cell because it
+ * is the only readout left, and fifteen seconds of it matter more than a
+ * figure usually measured in minutes.
+ *
+ * The number assumes nothing has been retuned since the last alignment. Turn
+ * a BPM or a BEAT and the loops no longer share the instant it counts from,
+ * so it jumps to describe the new arrangement rather than the old one.
+ * RESYNC makes it true again. */
+static int master_align_text(const inst_t *s, char *buf, int len) {
     if (s->clearing) {
         int secs = (int)(s->clear_gain * CLEAR_SECONDS + 0.999f);
         if (secs < 1) secs = 1;
         return snprintf(buf, len, "CLR%d", secs);
     }
-    char code[NUM_LOOPS];
-    for (int i = 0; i < NUM_LOOPS; i++) {
-        code[i] = loop_status_char(s, &s->loops[i]);
-    }
-    return snprintf(buf, len, "%c%c%c%c%c%c",
-                    code[0], code[1], code[2], code[3], code[4], code[5]);
+    const double t = align_period_seconds(s);
+    if (t <= 0.0 || !s->playing) return snprintf(buf, len, "-");
+
+    const double elapsed = (double)s->align_frames / (double)SAMPLE_RATE;
+    double rem = t - fmod(elapsed, t);
+    if (rem < 0.0) rem = 0.0;
+
+    if (rem < 600.0) return snprintf(buf, len, "%d", (int)rem);
+    int mins = (int)(rem / 60.0);
+    if (mins > 999) mins = 999;
+    return snprintf(buf, len, "%dM", mins);
 }
 
 /* Transport buttons name what the NEXT press will DO, not what is happening
@@ -914,6 +971,7 @@ static void v2_process_block(void *instance, int16_t *lr, int frames) {
     }
 
     s->total_frames += (uint64_t)frames;
+    if (s->playing) s->align_frames += (uint64_t)frames;
 }
 
 /* ------------------------------------------------------------------ */
@@ -957,7 +1015,9 @@ static void loop_set_param(inst_t *s, loop_t *loop,
     } else if (strcmp(suffix, "phase") == 0) {
         loop->phase_off = clampf((float)atof(val), -0.5f, 0.5f);
     } else if (strcmp(suffix, "volume") == 0) {
-        loop->volume = clampf((float)atof(val), 0.0f, 1.0f);
+        /* Faders reach 200%: six quiet takes summed can need lifting, and a
+         * loop pushed past unity into the soft clipper is a usable sound. */
+        loop->volume = clampf((float)atof(val), 0.0f, 2.0f);
     }
     /* Anything else: silently ignored. A write to a key we do not know is
      * not an error worth failing a block over. */
@@ -1047,7 +1107,6 @@ static int param_absent(char *buf, int len) {
 
 static int loop_get_param(const inst_t *s, const loop_t *loop,
                           const char *suffix, char *buf, int len) {
-    (void)s;
     if (strcmp(suffix, "record") == 0) return loop_record_text(loop, buf, len);
     if (strcmp(suffix, "trig") == 0)   return snprintf(buf, len, "PLAY");
     if (strcmp(suffix, "start") == 0)  return snprintf(buf, len, "%.3f", (double)loop->start_frac);
@@ -1057,6 +1116,7 @@ static int loop_get_param(const inst_t *s, const loop_t *loop,
     if (strcmp(suffix, "fit") == 0)    return snprintf(buf, len, "%s", FIT_LABELS[loop->fit]);
     if (strcmp(suffix, "phase") == 0)  return snprintf(buf, len, "%.3f", (double)loop->phase_off);
     if (strcmp(suffix, "volume") == 0) return snprintf(buf, len, "%.3f", (double)loop->volume);
+    if (strcmp(suffix, "cycle") == 0)  return loop_cycle_text(s, loop, buf, len);
     return param_absent(buf, len);
 }
 
@@ -1091,7 +1151,7 @@ static int build_chain_params(char *buf, int len) {
         /* A read-only ENUM, not a read-only string: a string renders through
          * drawOpaqueBox at about two characters wide, where the enum-square
          * renderer gives a proper bordered cell. */
-        ",{\"key\":\"master_state\",\"name\":\"STATE\",\"type\":\"enum\","
+        ",{\"key\":\"master_align\",\"name\":\"ALIGN\",\"type\":\"enum\","
           "\"options\":[\"-\"],\"access\":\"read\"}"
         ",{\"key\":\"master_resync\",\"name\":\"RSYN\",\"type\":\"enum\","
           "\"options\":%s,\"access\":\"write\"}"
@@ -1115,16 +1175,26 @@ static int build_chain_params(char *buf, int len) {
      * suffix — rename these and they become dials. */
     for (int i = 0; i < NUM_LOOPS; i++) {
         pos += snprintf(json + pos, sizeof(json) - pos,
+            /* Reaching 200%, with the default left where it was at 80% so
+             * that unity still sits comfortably inside the travel. */
             ",{\"key\":\"loop%d_volume\",\"name\":\"%d\",\"type\":\"float\","
-              "\"min\":0,\"max\":1,\"default\":0.8,\"step\":0.01,"
+              "\"min\":0,\"max\":2,\"default\":0.8,\"step\":0.01,"
               "\"unit\":\"%%\",\"display_format\":\"%%.0f\"}",
+            i + 1, i + 1);
+    }
+
+    /* One cycle readout per loop, for the Orbits page. */
+    for (int i = 0; i < NUM_LOOPS; i++) {
+        pos += snprintf(json + pos, sizeof(json) - pos,
+            ",{\"key\":\"loop%d_cycle\",\"name\":\"%d\",\"type\":\"enum\","
+              "\"options\":[\"-\"],\"access\":\"read\"}",
             i + 1, i + 1);
     }
 
     for (int i = 0; i < NUM_LOOPS; i++) {
         int n = i + 1;
         pos += snprintf(json + pos, sizeof(json) - pos,
-            ",{\"key\":\"loop%d_record\",\"name\":\"REC\",\"type\":\"enum\","
+            ",{\"key\":\"loop%d_record\",\"name\":\"REC %d\",\"type\":\"enum\","
               "\"options\":%s,\"access\":\"write\"}"
             ",{\"key\":\"loop%d_trig\",\"name\":\"TRIG\",\"type\":\"enum\","
               "\"options\":%s,\"access\":\"write\"}"
@@ -1153,7 +1223,7 @@ static int build_chain_params(char *buf, int len) {
             ",{\"key\":\"loop%d_phase\",\"name\":\"PHAS\",\"type\":\"float\","
               "\"min\":-0.5,\"max\":0.5,\"default\":0,\"step\":0.005,"
               "\"unit\":\"%%\",\"display_format\":\"%%.0f\"}",
-            n, TRIGGER_OPTIONS_JSON,
+            n, n, TRIGGER_OPTIONS_JSON,
             n, TRIGGER_OPTIONS_JSON,
             n, n,
             n, (double)MIN_BPM, (double)MAX_BPM, (double)DEFAULT_BPM,
@@ -1179,31 +1249,26 @@ static int build_ui_hierarchy(char *buf, int len) {
     pos += snprintf(json + pos, sizeof(json) - pos,
         "{\"modes\":null,\"levels\":{"
         "\"root\":{\"label\":\"Wayward\","
-          /* TOP ROW IS THE TRANSPORT, BOTTOM ROW IS THE TUNING.
+          /* MAIN IS THE SIX RECORD BUTTONS AND THE TRANSPORT.
            *
-           * The two things you touch mid-performance are PLAY and RSYN, so
-           * they take the two leftmost cells — the ones a hand finds without
-           * looking. STATE sits at the end of the same row, reporting on what
-           * those two just did, with the blank cell between them holding the
-           * momentary buttons apart from the readout so that neither is
-           * reached by accident.
-           *
-           * The bottom row is set once and left: BASE and SPRD adjacent
-           * because they are read together (BASE is where the piece is, SPRD
-           * is how fast it comes apart), then WIDEN. The last cell is a
-           * load-bearing blank: "" is passed through by keyOf, and both the
-           * renderer and the knob handlers treat a falsy key as "nothing
-           * here" — true blank grid space, and a no-op if it is turned. */
-          "\"knobs\":[\"master_play\",\"master_resync\",\"master_clear\",\"master_state\","
-                     "\"master_base\",\"master_spread\",\"master_widen\",\"\"],"
+           * The six live in a 3x2 block on the left, in the same shape they
+           * occupy on Mix and on Orbits, so the hand learns one arrangement
+           * of the ensemble and reuses it on every page that addresses all
+           * six at once. PLAY and RSYN take the right-hand column, together
+           * and away from the six, because they act on all of them. */
+          "\"knobs\":[\"loop1_record\",\"loop2_record\",\"loop3_record\",\"master_play\","
+                     "\"loop4_record\",\"loop5_record\",\"loop6_record\",\"master_resync\"],"
           "\"params\":["
+            "{\"key\":\"loop1_record\",\"label\":\"Rec 1\"},"
+            "{\"key\":\"loop2_record\",\"label\":\"Rec 2\"},"
+            "{\"key\":\"loop3_record\",\"label\":\"Rec 3\"},"
+            "{\"key\":\"loop4_record\",\"label\":\"Rec 4\"},"
+            "{\"key\":\"loop5_record\",\"label\":\"Rec 5\"},"
+            "{\"key\":\"loop6_record\",\"label\":\"Rec 6\"},"
             "{\"key\":\"master_play\",\"label\":\"Play\"},"
             "{\"key\":\"master_resync\",\"label\":\"Resync\"},"
-            "{\"key\":\"master_clear\",\"label\":\"Clear\"},"
-            "{\"key\":\"master_state\",\"label\":\"State\"},"
-            "{\"key\":\"master_base\",\"label\":\"Base\"},"
-            "{\"key\":\"master_spread\",\"label\":\"Spread\"},"
-            "{\"key\":\"master_widen\",\"label\":\"Widen\"},"
+            "{\"level\":\"orbits\",\"label\":\"Orbits\"},"
+            "{\"level\":\"shape\",\"label\":\"Shape\"},"
             "{\"level\":\"mix\",\"label\":\"Mix\"},"
             "{\"level\":\"loop1\",\"label\":\"Loop 1\"},"
             "{\"level\":\"loop2\",\"label\":\"Loop 2\"},"
@@ -1211,11 +1276,23 @@ static int build_ui_hierarchy(char *buf, int len) {
             "{\"level\":\"loop4\",\"label\":\"Loop 4\"},"
             "{\"level\":\"loop5\",\"label\":\"Loop 5\"},"
             "{\"level\":\"loop6\",\"label\":\"Loop 6\"}]}"
-        /* Mix sits between Main and the loops: the six faders in ensemble
-         * order, then what leaves the module. */
+        /* ORBITS: where each loop is in its own cycle, and when they next
+         * all meet. The six sit in the same 3x2 block as everywhere else,
+         * and ALIGN takes the cell at the end of the top row — the one place
+         * on the page that speaks for the ensemble rather than for a loop. */
+        ",\"orbits\":{\"label\":\"Orbits\",\"knobs\":["
+          "\"loop1_cycle\",\"loop2_cycle\",\"loop3_cycle\",\"master_align\","
+          "\"\",\"loop4_cycle\",\"loop5_cycle\",\"loop6_cycle\"]}"
+        /* SHAPE: how the ensemble is tuned and what leaves it. Set once and
+         * left, which is why none of it is on Main any more. CLEAR sits in
+         * the far corner, the furthest cell on the page from anything
+         * reached in a hurry. */
+        ",\"shape\":{\"label\":\"Shape\",\"knobs\":["
+          "\"master_base\",\"master_spread\",\"master_widen\",\"\","
+          "\"master_dry\",\"master_out\",\"\",\"master_clear\"]}"
         ",\"mix\":{\"label\":\"Mix\",\"knobs\":["
-          "\"loop1_volume\",\"loop2_volume\",\"loop3_volume\",\"loop4_volume\","
-          "\"loop5_volume\",\"loop6_volume\",\"master_dry\",\"master_out\"]}");
+          "\"loop1_volume\",\"loop2_volume\",\"loop3_volume\",\"\","
+          "\"loop4_volume\",\"loop5_volume\",\"loop6_volume\",\"\"]}");
 
     /* One level PER LOOP, so each is its own named section. Merging them
      * into a single "loops" level would make the six one section, but the
@@ -1228,9 +1305,11 @@ static int build_ui_hierarchy(char *buf, int len) {
               /* Top row is the take: capture it, hear it, bound it.
                * Bottom row is the time it keeps: how fast, how long, how the
                * window meets the period, and where in the cycle it sits. */
-              "\"loop%d_record\",\"loop%d_trig\",\"loop%d_start\",\"loop%d_end\","
+              /* REC moved to Main, so the take's controls shift left and the
+               * top row ends on a blank cell. */
+              "\"loop%d_trig\",\"loop%d_start\",\"loop%d_end\",\"\","
               "\"loop%d_bpm\",\"loop%d_beats\",\"loop%d_fit\",\"loop%d_phase\"]}",
-            n, n, n, n, n, n, n, n, n, n);
+            n, n, n, n, n, n, n, n, n);
     }
 
     pos += snprintf(json + pos, sizeof(json) - pos, "}}");
@@ -1260,10 +1339,10 @@ static int v2_get_param(void *instance, const char *key, char *buf, int len) {
         return snprintf(buf, len, s->clearing ? "KEEP" : "CLR");
     if (strcmp(key, "master_base") == 0)   return snprintf(buf, len, "%.0f", (double)s->base_bpm);
     if (strcmp(key, "master_spread") == 0) return snprintf(buf, len, "%.0f", (double)s->spread);
-    if (strcmp(key, "master_state") == 0)  return master_state_text(s, buf, len);
     if (strcmp(key, "master_dry") == 0)    return snprintf(buf, len, "%.3f", (double)s->dry);
     if (strcmp(key, "master_out") == 0)    return snprintf(buf, len, "%.3f", (double)s->out);
     if (strcmp(key, "master_widen") == 0)  return snprintf(buf, len, "%.3f", (double)s->widen);
+    if (strcmp(key, "master_align") == 0)  return master_align_text(s, buf, len);
 
     if (strcmp(key, "chain_params") == 0)  return build_chain_params(buf, len);
     if (strcmp(key, "ui_hierarchy") == 0)  return build_ui_hierarchy(buf, len);

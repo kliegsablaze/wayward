@@ -23,7 +23,7 @@
 extern audio_fx_api_v2_t *move_audio_fx_init_v2(const host_api_v1_t *host);
 
 #define TEST_NUM_LOOPS   6
-#define TEST_PARAM_COUNT 63
+#define TEST_PARAM_COUNT 69
 #define FRAMES 128
 #define SR     44100L
 
@@ -138,8 +138,8 @@ int main(void) {
 
         int keys = count_occurrences(buf, "\"key\":");
         check(keys == TEST_PARAM_COUNT,
-              "test0: chain_params has exactly 63 entries — 9 master, 6 mixer\n"
-              "       faders, and 8 on each of the six loop pages");
+              "test0: chain_params has exactly 69 entries — 9 master, and per\n"
+              "       loop a fader, a cycle readout, and the 7 on its own page");
 
         /* snprintf truncates SILENTLY and a module that overflows its JSON
          * buffer simply stops having a UI. Fail while there is still room. */
@@ -169,7 +169,7 @@ int main(void) {
               "test1: ui_hierarchy fits its 8192 buffer with headroom");
 
         const char *master[] = { "master_play", "master_base",
-                                 "master_spread", "master_state", "master_resync",
+                                 "master_spread", "master_align", "master_resync",
                                  "master_clear",
                                  "master_dry", "master_out", "master_widen" };
         for (size_t i = 0; i < sizeof(master) / sizeof(master[0]); i++) {
@@ -180,7 +180,8 @@ int main(void) {
         }
 
         const char *suffixes[] = { "record", "trig", "start", "end",
-                                   "bpm", "beats", "fit", "phase", "volume" };
+                                   "bpm", "beats", "fit", "phase", "volume",
+                                   "cycle" };
         for (int L = 1; L <= TEST_NUM_LOOPS; L++) {
             for (size_t i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); i++) {
                 char probe[64];
@@ -190,17 +191,24 @@ int main(void) {
             }
         }
 
-        /* Eight levels: root, mix, and one per loop. */
-        check(count_occurrences(ui, "\"knobs\":") == 8,
-              "test1: exactly eight pages are declared");
-        check(count_occurrences(ui, "\"level\":") == 7,
-              "test1: root carries seven nav entries — Mix and six loops");
+        /* Ten levels: root, Orbits, Shape, Mix, and one per loop. */
+        check(count_occurrences(ui, "\"knobs\":") == 10,
+              "test1: exactly ten pages are declared");
+        check(count_occurrences(ui, "\"level\":") == 9,
+              "test1: root carries nine nav entries — Orbits, Shape, Mix and\n"
+              "       the six loop pages");
         /* One deliberate blank cell on Main. */
-        check(strstr(ui, "\"master_resync\",\"master_clear\",\"master_state\"") != NULL,
-              "test1: CLEAR occupies Main's third cell, which used to be blank");
-        check(strstr(ui, "\"master_widen\",\"\"") != NULL,
-              "test1: Main's last cell is a load-bearing blank, left by the\n"
-              "       removal of SYNC");
+        check(strstr(ui, "\"\",\"master_clear\"") != NULL,
+              "test1: CLEAR sits in Shape's far corner, the cell furthest from\n"
+              "       anything reached in a hurry");
+        check(strstr(ui, "\"loop3_record\",\"master_play\"") != NULL,
+              "test1: Main puts the six RECs in a 3x2 block with the transport\n"
+              "       in the right-hand column");
+        check(strstr(ui, "\"master_align\",\"\",\"loop4_cycle\"") != NULL,
+              "test1: Orbits puts ALIGN at the end of the top row, with the\n"
+              "       second row's first cell blank");
+        check(strstr(ui, "\"loop1_trig\",\"loop1_start\"") != NULL,
+              "test1: a loop page now opens on TRIG, REC having moved to Main");
 
         api->destroy_instance(inst);
     }
@@ -335,24 +343,32 @@ int main(void) {
         api->destroy_instance(inst);
     }
 
-    /* ---- test 7: the record state machine and the STATE readout ---------- */
+    /* ---- test 7: the record state machine, read per loop --------------- */
     {
         void *inst = api->create_instance(NULL, NULL);
 
-        api->get_param(inst, "master_state", buf, sizeof(buf));
-        check(strcmp(buf, "......") == 0,
-              "test7: STATE shows six empty loops at startup");
+        for (int L = 1; L <= TEST_NUM_LOOPS; L++) {
+            char key[32];
+            snprintf(key, sizeof(key), "loop%d_cycle", L);
+            api->get_param(inst, key, buf, sizeof(buf));
+            check(strcmp(buf, "-") == 0,
+                  "test7: every loop reads empty at startup");
+        }
 
         /* A trigger fires on anything that is not the idle spelling. */
         api->set_param(inst, "loop3_record", "-");
-        api->get_param(inst, "master_state", buf, sizeof(buf));
-        check(strcmp(buf, "......") == 0,
+        api->get_param(inst, "loop3_cycle", buf, sizeof(buf));
+        check(strcmp(buf, "-") == 0,
               "test7: writing the idle spelling does not fire a trigger");
 
         api->set_param(inst, "loop3_record", "GO");
-        api->get_param(inst, "master_state", buf, sizeof(buf));
-        check(strcmp(buf, "..R...") == 0,
-              "test7: REC on loop 3 shows R in the third position only");
+        api->get_param(inst, "loop3_cycle", buf, sizeof(buf));
+        check(strcmp(buf, "REC") == 0,
+              "test7: the loop being recorded says so, and it is the only\n"
+              "       place that can — a write-only trigger's cell shows its\n"
+              "       static label and nothing else");
+        api->get_param(inst, "loop2_cycle", buf, sizeof(buf));
+        check(strcmp(buf, "-") == 0, "test7: and its neighbours are unaffected");
 
         /* The button names what the NEXT press will do. */
         api->get_param(inst, "loop3_record", buf, sizeof(buf));
@@ -362,24 +378,11 @@ int main(void) {
         check(strcmp(buf, "REC") == 0,
               "test7: an idle loop's button still reads REC");
 
-        /* Stopping with nothing captured (the skeleton records no audio)
-         * discards the take rather than keeping a click. This assertion
-         * changes shape in step 2, when process_block starts filling the
-         * buffer. */
+        /* Stopping with nothing captured discards the take. */
         api->set_param(inst, "loop3_record", "GO");
-        api->get_param(inst, "master_state", buf, sizeof(buf));
-        check(strcmp(buf, "......") == 0,
+        api->get_param(inst, "loop3_cycle", buf, sizeof(buf));
+        check(strcmp(buf, "-") == 0,
               "test7: a take under the 50 ms minimum is discarded");
-
-        /* The readout must never contain a character enumSquareLines() treats
-         * as a word separator: one of those splits the value and shifts every
-         * position after it, so the ensemble reads wrong rather than short. */
-        api->set_param(inst, "loop2_record", "GO");
-        api->get_param(inst, "master_state", buf, sizeof(buf));
-        check(strcmp(buf, ".R....") == 0, "test7: STATE tracks a second loop");
-        check(strpbrk(buf, "-_+ ") == NULL,
-              "test7: STATE contains no character the enum-square renderer\n"
-              "       would break the value on");
 
         api->destroy_instance(inst);
     }
@@ -482,9 +485,9 @@ int main(void) {
         api->get_param(inst, "loop1_record", buf, sizeof(buf));
         check(strcmp(buf, "DUB") == 0,
               "test10: a closed take leaves the button offering DUB");
-        api->get_param(inst, "master_state", buf, sizeof(buf));
-        check(buf[0] == 'S',
-              "test10: STATE shows loop 1 holding a take while stopped");
+        api->get_param(inst, "loop1_cycle", buf, sizeof(buf));
+        check(strcmp(buf, "S") == 0,
+              "test10: loop 1 reads as holding a take while stopped");
 
         /* Silence the other five so only loop 1 is measured. */
         for (int L = 2; L <= TEST_NUM_LOOPS; L++) {
@@ -493,8 +496,10 @@ int main(void) {
             api->set_param(inst, key, "0");
         }
         api->set_param(inst, "master_play", "GO");
-        api->get_param(inst, "master_state", buf, sizeof(buf));
-        check(buf[0] == 'P', "test10: STATE shows loop 1 playing once started");
+        api->get_param(inst, "loop1_cycle", buf, sizeof(buf));
+        check(buf[0] >= '0' && buf[0] <= '9',
+              "test10: once running, the readout is how far through its cycle\n"
+              "        the loop is");
 
         int16_t blk[FRAMES * 2];
         memset(blk, 0, sizeof(blk));
@@ -908,8 +913,8 @@ int main(void) {
         int16_t *mat = (int16_t *)calloc(TAKE, sizeof(int16_t));
         record_take(api, inst, "loop1", mat, TAKE);
 
-        api->get_param(inst, "master_state", buf, sizeof(buf));
-        check(buf[0] == '.',
+        api->get_param(inst, "loop1_cycle", buf, sizeof(buf));
+        check(strcmp(buf, "-") == 0,
               "test20: a recording that never crosses the threshold is\n"
               "        discarded — a loop that reads as loaded and plays\n"
               "        nothing is worse than no loop at all");
@@ -1068,9 +1073,11 @@ int main(void) {
         api->get_param(inst, "master_clear", buf, sizeof(buf));
         check(strcmp(buf, "KEEP") == 0,
               "test29: once running, the button offers to call it off");
-        api->get_param(inst, "master_state", buf, sizeof(buf));
+        api->get_param(inst, "master_align", buf, sizeof(buf));
         check(strncmp(buf, "CLR", 3) == 0,
-              "test29: STATE shows the countdown while a clear is in flight");
+              "test29: ALIGN shows the countdown while a clear is in flight —\n"
+              "        fifteen seconds of it matter more than a realignment\n"
+              "        figure measured in minutes");
 
         /* Halfway: audibly quieter, but not gone and not yet wiped. */
         run_silence(api, inst, (long)(7.5 * SR));
@@ -1087,8 +1094,12 @@ int main(void) {
 
         /* And at the end everything is gone and back to defaults. */
         run_silence(api, inst, (long)(8.0 * SR));
-        api->get_param(inst, "master_state", buf, sizeof(buf));
-        check(strcmp(buf, "......") == 0, "test29: every take is erased");
+        for (int L = 1; L <= TEST_NUM_LOOPS; L++) {
+            char key[32];
+            snprintf(key, sizeof(key), "loop%d_cycle", L);
+            api->get_param(inst, key, buf, sizeof(buf));
+            check(strcmp(buf, "-") == 0, "test29: every take is erased");
+        }
         api->get_param(inst, "master_play", buf, sizeof(buf));
         check(strcmp(buf, "PLAY") == 0, "test29: and the ensemble has stopped");
         api->get_param(inst, "master_out", buf, sizeof(buf));
@@ -1131,11 +1142,10 @@ int main(void) {
 
         /* Well past where the wipe would have landed. */
         run_silence(api, inst, (long)(10.0 * SR));
-        api->get_param(inst, "master_state", buf, sizeof(buf));
-        check(buf[0] == 'P',
-              "test30: the take survives and is still playing — a destructive\n"
-              "        control that cannot be called off is a trap, and this\n"
-              "        one sits between two that are pressed constantly");
+        api->get_param(inst, "loop1_cycle", buf, sizeof(buf));
+        check(buf[0] >= '0' && buf[0] <= '9',
+              "test30: the take survives and is still running — a destructive\n"
+              "        control that cannot be called off is a trap");
 
         int16_t blk[FRAMES * 2];
         memset(blk, 0, sizeof(blk));
@@ -1150,6 +1160,76 @@ int main(void) {
               "        had got to");
 
         free(mat);
+        api->destroy_instance(inst);
+    }
+
+
+    /* ---- test 31: the realignment countdown ---------------------------- */
+    {
+        void *inst = api->create_instance(NULL, NULL);
+        isolate_loops(api, inst);
+
+        api->get_param(inst, "master_align", buf, sizeof(buf));
+        check(strcmp(buf, "-") == 0,
+              "test31: with nothing loaded there is nothing to realign");
+
+        const long TAKE = 22050;
+        int16_t *mat = (int16_t *)malloc(sizeof(int16_t) * TAKE);
+        for (long i = 0; i < TAKE; i++) mat[i] = 12000;
+        for (int L = 1; L <= TEST_NUM_LOOPS; L++) {
+            char key[32];
+            snprintf(key, sizeof(key), "loop%d", L);
+            record_take(api, inst, key, mat, TAKE);
+        }
+
+        /* Defaults: BEAT 4 everywhere, tempi 100..105. Every loop completes
+         * a whole number of cycles in 4 x 60 seconds — that is what makes
+         * this figure exact rather than approximate. */
+        api->set_param(inst, "master_play", "GO");
+        api->get_param(inst, "master_align", buf, sizeof(buf));
+        check(strcmp(buf, "239") == 0 || strcmp(buf, "240") == 0,
+              "test31: six loops at BEAT 4 and whole tempi realign after\n"
+              "        4 x 60 = 240 s, whatever the tempi actually are");
+
+        /* And it counts down. */
+        run_silence(api, inst, 100L * SR);
+        api->get_param(inst, "master_align", buf, sizeof(buf));
+        int rem = atoi(buf);
+        check(rem > 135 && rem < 145,
+              "test31: 100 s later there are about 140 s left");
+
+        /* RESYNC restarts the count. */
+        api->set_param(inst, "master_resync", "GO");
+        api->get_param(inst, "master_align", buf, sizeof(buf));
+        rem = atoi(buf);
+        check(rem > 235,
+              "test31: RESYNC realigns the ensemble and the countdown with it");
+
+        /* A different BEAT on one loop changes the arithmetic: 3 against 4
+         * needs lcm(3,4) = 12 quarter-notes, so 12 x 60 = 720 s, which is
+         * shown in minutes. */
+        api->set_param(inst, "loop2_beats", "3");
+        api->get_param(inst, "master_align", buf, sizeof(buf));
+        check(strchr(buf, 'M') != NULL,
+              "test31: past ten minutes the countdown switches to minutes —\n"
+              "        a five-character cell cannot hold 720 seconds usefully");
+
+        free(mat);
+        api->destroy_instance(inst);
+    }
+
+    /* ---- test 32: faders reach 200% ------------------------------------ */
+    {
+        void *inst = api->create_instance(NULL, NULL);
+        api->get_param(inst, "loop1_volume", buf, sizeof(buf));
+        check(strcmp(buf, "0.800") == 0,
+              "test32: the default fader is unchanged at 80%");
+        api->set_param(inst, "loop1_volume", "2");
+        api->get_param(inst, "loop1_volume", buf, sizeof(buf));
+        check(strcmp(buf, "2.000") == 0, "test32: a fader reaches 200%");
+        api->set_param(inst, "loop1_volume", "5");
+        api->get_param(inst, "loop1_volume", buf, sizeof(buf));
+        check(strcmp(buf, "2.000") == 0, "test32: and clamps there");
         api->destroy_instance(inst);
     }
 

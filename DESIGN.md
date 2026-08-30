@@ -88,142 +88,135 @@ practice they never all line up again, which is the intended behaviour.
 
 ## Control surface
 
-Eight pages, one `ui_hierarchy` level each. Eight knobs per page, 4 across ×
+Ten pages, one `ui_hierarchy` level each. Eight knobs per page, 4 across ×
 2 rows. Labels are capped at 5 characters by the host's `LABEL_CHARS`; values
 are effectively capped at 5–6 by the cell width.
+
+**The six loops occupy the same 3×2 block on every page that addresses all six
+at once** — Main, Orbits, Mix. The hand learns one arrangement of the ensemble
+and reuses it, so loop 5 is always in the same place.
 
 ### Main
 
 ```
-PLAY   RSYN   CLEAR  STATE
-BASE   SPRD   WIDEN  ····
+REC 1  REC 2  REC 3  PLAY
+REC 4  REC 5  REC 6  RSYN
 ```
 
-Top row is the transport, bottom row the tuning. PLAY and RSYN are the two
-controls touched mid-performance, so they take the leftmost cells — the ones a
-hand finds without looking — with STATE at the end of the same row reporting
-on what they just did. The bottom row is set once and left: BASE beside SPRD
-because they are read together, then WIDEN, then a blank cell — left by the
-removal of SYNC, and worth keeping blank rather than filling for the sake of
-it.
+Recording and the transport, which are the only things touched while playing.
+The six RECs take the 3×2 block; PLAY and RSYN take the right-hand column,
+together and away from the six because they act on all of them.
 
 | key | type | |
 |---|---|---|
-| `master_play` | trigger | Zeroes all six phases at the same frame and runs. That shared moment is what the whole piece drifts away from. Reads `PLAY` / `STOP` — the button names what the *next* press will do, though **only in the header while the knob is held**: see the note below. |
+| `loopN_record` | trigger | Three destinations from one button, as in Forgetful: an idle loop starts recording, a recording loop closes the take, and a loaded loop toggles **overdub**. Reads `REC` → `STOP` → `DUB` → `PLAY`. |
+| `master_play` | trigger | Zeroes all six phases at the same frame and runs. That shared moment is what the whole piece drifts away from, and what the Orbits countdown measures from. |
+| `master_resync` | trigger | Re-zeroes every phase *without* stopping — pull the ensemble back into unison mid-performance. |
+
+### Orbits
+
+```
+1      2      3      ALIGN
+····   4      5      6
+```
+
+Where each loop is in its own cycle, and when they next all meet. This page is
+the instrument's own behaviour made visible; without it the drift is audible
+but not legible.
+
+`loopN_cycle` is read-only, one per loop:
+
+| value | |
+|---|---|
+| `-` | nothing recorded |
+| `REC` | recording right now |
+| `S` | has a take, ensemble stopped |
+| `0`–`99` | playing, and how far through its cycle |
+| `O42` | overdubbing, and how far through its cycle |
+
+This replaced a single six-character `STATE` readout on Main, which had to say
+everything about six loops in six characters. It also has to carry the
+recording state, because with STATE gone this is the only place recording is
+visible at all — a write-only trigger's cell shows its static label and
+nothing else.
+
+All three spellings are safe against `enumSquareLines`: an all-digit value
+goes straight to one line, a lone `-` has no alphanumeric beside it to be read
+as a word separator, and `O42` is neither all digits nor separated.
+
+`master_align` is the realignment countdown, and it is exact arithmetic rather
+than a search. A loop's period is `beats × 60/bpm` seconds, so with whole-number
+tempi the periods are rational; the least common multiple of a set of fractions
+is `lcm(numerators) / gcd(denominators)`. The answer is prettier than it has
+any right to be:
+
+> **Six loops all at BEAT 4 come back together every 240 seconds at any whole
+> tempi at all**, because in that time each completes exactly its own BPM count
+> of cycles. Change one loop's BEAT and the figure moves — 3 against 4 needs
+> `lcm(3,4) = 12` quarter notes, so twelve minutes.
+
+Under ten minutes it counts seconds; past that it switches to minutes (`12M`),
+since a five-character cell cannot hold 720 seconds usefully. It reads `-` when
+nothing is loaded or the ensemble is stopped, and it is borrowed by CLEAR for
+its fifteen-second countdown — the only readout left, and fifteen seconds
+matter more in the moment than a figure measured in minutes.
+
+**The countdown assumes nothing has been retuned since the last alignment.**
+Turn a BPM or a BEAT and the loops no longer share the instant it counts from,
+so it jumps to describe the new arrangement rather than the old one. RESYNC
+makes it true again.
+
+### Shape
+
+```
+BASE   SPRD   WIDEN  ····
+DRY    OUT    ····   CLEAR
+```
+
+How the ensemble is tuned and what leaves it — set once and left, which is why
+none of it is on Main.
+
+| key | type | |
+|---|---|---|
 | `master_base` | float 40–200, step 1 | Reference tempo. |
 | `master_spread` | float −12…+12, step 1 | Loop *i* runs at `base + i × spread`. **0 locks all six in unison**; the return to 0 is the piece's largest gesture. Writes the six per-loop tempi, which stay individually editable afterwards. |
-| `master_state` | enum, `access:"read"` | Six characters, one per loop: `.` empty, `S` has a take but stopped, `P` playing, `O` overdubbing, `R` recording. This is where transport state actually lives — the glyphs are constrained by the renderer, not chosen for looks; see below. |
-| `master_resync` | trigger | Re-zeroes every phase *without* stopping — pull the ensemble back into unison mid-performance. |
-| `""` | | A load-bearing blank cell. |
-| `master_widen` | float 0–1, `unit:"%"` | A stereo *spread* control, not a position control. At 0 all six loops sit centred; turning it up fans them progressively across the stereo field. Six loops phasing in mono turn to mud; the same six spread across the image read as voices you can follow individually. Lives on Main because it shapes the ensemble, not the balance. |
-| `master_clear` | trigger | Erases every take and returns every setting to its default, over a 15-second fade. Reads `CLR`, then `KEEP` once running. See below. |
+| `master_widen` | float 0–1, `unit:"%"` | A stereo *spread*, not a position. At 0 all six sit centred; turning it up fans them across the field. Six loops phasing in mono turn to mud; the same six spread across the image read as voices you can follow. |
+| `master_dry` | float 0–1, `unit:"%"` | The live input's level, defaulting to full: an effect that silences its input is a bug. Not a dry/wet crossfade — the loops carry their own levels. |
+| `master_out` | float 0–1, `unit:"%"` | The loop ensemble's level. Kept off the dry path so that an idle module passes audio through bit-exact. |
+| `master_clear` | trigger | Erases every take and resets every setting, over a 15-second fade. Reads `CLR`, then `KEEP`. See below. |
 
-### CLEAR
-
-Erases all six takes and resets every setting — but not at once. It fades the
-ensemble over **15 seconds** and wipes at the end.
-
-**The delay is the safety.** CLEAR sits between two controls that get pressed
-constantly and it throws away everything on the module. A confirmation dialog
-would need a screen this module does not have; a long audible fade needs
-nothing, is impossible to miss, and a second press calls it off — the button
-reads `KEEP` while a clear is in flight. It is also the right musical shape,
-since the last gesture of a piece is usually to let it go quiet.
-
-**The fade applies to the loops only, not to DRY.** Ducking someone's live
-playing for fifteen seconds to announce that their loops are going away would
-be taking the wrong thing.
-
-**STATE displaces its glyphs for the countdown** — `CLR` and the whole seconds
-remaining, with no separator, so the renderer either fits it on one line or
-splits it as `CLR` over the number. For those fifteen seconds the countdown is
-the only thing that cell could usefully say.
-
-**The audio buffers are not zeroed.** Wiping 31.7 MB would take far longer
-than the 900 µs the block has, and buys nothing: a take with no recorded
-length cannot be reached, and the next recording overwrites from the
-beginning. The wipe also clears each loop's resolved `span`, because the
-prepass ran at the top of the block against takes that still existed —
-without that, the rest of the block would read through a window with nothing
-behind it.
-
-### Why the transport state is in STATE and not on the button
-
-`drawButton` (`render_page_movy.mjs:1344`) draws the button graphic and
-nothing else, and the renderer says why in its own comment: *"a trigger has no
-state, so nothing else on the screen changes when you click it."* A write-only
-parameter's cell therefore shows the widget plus its **static label**; whatever
-`get_param` returns for it appears only in the header, and only while the knob
-is held.
-
-So `PLAY` on the grid reads `PLAY` whether the ensemble is running or not, and
-`REC` reads `REC` whether or not that loop is recording. Both buttons *do*
-carry a full state vocabulary — that vocabulary is simply for the header.
-
-Making PLAY an ordinary two-option enum would put its state permanently on
-screen at the cost of the button and its press flash. Rejected: STATE is one
-cell away and reports all six loops at once, which is more than a transport
-readout would say. The known gap is that an ensemble with nothing recorded
-reads `......` whether running or stopped.
-
-### What the STATE readout may contain
-
-The enum square puts every value through `enumSquareLines()` in schwung's
-`shared/param_pages/font5x3.mjs`, which imposes three rules that between them
-choose the glyphs:
-
-1. `-`, `_` and space are **word separators** — `-` whenever it falls between
-   two alphanumerics — and the function then keeps only the first three
-   characters of each of the first two words. An ensemble reading `R-S---` is
-   therefore rewritten to `R S---`, split, and drawn as `R` over `S--`: not a
-   truncated ensemble but a **wrong** one, since characters vanish and every
-   position after the break shifts, so the readout stops saying which loop is
-   which. An all-empty `------` survives by accident, no hyphen there having
-   an alphanumeric on either side — which is exactly how this would have
-   looked correct until the first take was recorded.
-2. The value is uppercased, so a glyph cannot be told apart from its uppercase
-   twin.
-3. An all-digit value takes a different path entirely.
-
-Hence `.`, `S`, `P`, `O`, `R`: no separator character, no case-only
-distinction, never all digits. `-` was the wanted glyph for an empty loop and
-is exactly the one that cannot be used. If six characters do not fit the interior on one line, the
-renderer falls back to a blind 3+3 slice, giving loops 1–3 over loops 4–6 with
-every position intact — a legible second-best rather than a wrong reading.
-
-**Page count is settled:** `drawBankBar` (`render_page_movy.mjs:902`) handles
-any `pageCount` up to the 128-pixel display width, and the planner imposes no
-limit on levels, so eight sections is fine. Mix stays its own page.
+CLEAR sits in the far corner — the cell furthest from anything reached in a
+hurry, and now on a page you have to navigate to.
 
 ### Mix
 
 ```
-1      2      3      4
-5      6      DRY    OUT
+1      2      3      ····
+4      5      6      ····
 ```
 
-`loop{1..6}_volume` — the `_volume` suffix is what makes the host render a
-fader rather than a dial — then `master_dry` and `master_out`.
+`loopN_volume`, in the same 3×2 block as everywhere else. The `_volume` suffix
+is what makes the host render a fader rather than a dial.
 
-`master_dry` is the live input's level, defaulting to full: an effect that
-silences its input is a bug. It is **not** a dry/wet crossfade, since the loops
-carry their own levels on this same page. It sits here, beside the six faders
-and immediately before OUT, because it is one more thing being balanced.
+**The faders reach 200%**, with the default left at 80% so unity sits
+comfortably inside the travel. Six quiet takes summed can need lifting, and a
+loop pushed past unity into the soft clipper is a usable sound rather than an
+accident.
 
 ### Loop 1 … Loop 6
 
 ```
-REC    TRIG   START  END
+TRIG   START  END    ····
 BPM    BEAT   FIT    PHAS
 ```
 
-Top row is the take: capture it, hear it, bound it. Bottom row is the time it
-keeps: how fast, how long, how the window meets the period, where in the cycle
-it sits.
+Top row is the take: hear it, and bound it. Bottom row is the time it keeps:
+how fast, how long, how the window meets the period, and where in the cycle it
+sits. REC lives on Main with the other five, so the top row ends on a blank
+cell.
 
 | key | type | |
 |---|---|---|
-| `loopN_record` | trigger | Three destinations from one button, exactly as in Forgetful: an idle loop starts recording, a recording loop closes the take, and a loaded loop toggles **overdub**, layering fresh input onto what is there pass after pass without stopping. Records into *this* loop, so no routing parameter is needed (Forgetful needs one because its REC is global). Reads `REC` → `STOP` → `DUB` → `PLAY`. |
 | `loopN_trig` | trigger | One-shot audition of the window, ignoring the period. |
 | `loopN_start` | float 0–1, `unit:"%"` | Where the window begins in the take. |
 | `loopN_end` | float −1…+1, `unit:"%"` | **A bipolar length measured from START, not a second position.** Centre is a zero-length window; the top half grows the window forward from START until it reaches the end of the take; the bottom half grows it *backward* from START, played in **reverse**, reaching the head of the take at the extreme. The two halves are mirror images about a silent centre, and the reverse half reaches material the forward half never can. Because END is a length, there is no ordering to enforce and no way to set an inside-out window. The span is still resolved **per block, not in `set_param`**, so a knob never snaps back under the hand. |
@@ -231,6 +224,46 @@ it sits.
 | `loopN_beats` | float 1–16, step 1 | `period = beats × 60/bpm`. Default 4 — at 100 BPM a 2.4 s loop, long enough to hear as a phrase rather than a flutter. |
 | `loopN_fit` | enum `PAD`/`SPEED`/`RPT` | Below. |
 | `loopN_phase` | float −0.5…+0.5 | Offsets this loop within its own cycle: slide it against the others by hand instead of waiting for it to drift. **Rate-limited per frame**, so the loop runs up to 25% fast or slow until it arrives rather than jumping — see below. |
+
+### CLEAR
+
+Erases all six takes and resets every setting — but not at once. It fades the
+ensemble over **15 seconds** and wipes at the end.
+
+**The delay is the safety.** A confirmation dialog would need a screen this
+module does not have; a long audible fade needs nothing, is impossible to
+miss, and a second press calls it off — the button reads `KEEP` while a clear
+is in flight. It is also the right musical shape, since the last gesture of a
+piece is usually to let it go quiet.
+
+**The fade applies to the loops only, not to DRY.** Ducking someone's live
+playing for fifteen seconds to announce that their loops are going away would
+be taking the wrong thing.
+
+**The audio buffers are not zeroed.** Wiping 31.7 MB would take far longer
+than the 900 µs the block has, and buys nothing: a take with no recorded
+length cannot be reached, and the next recording overwrites from the
+beginning. The wipe does clear each loop's resolved `span`, because the
+prepass ran at the top of the block against takes that still existed —
+without that, the rest of the block would read through a window with nothing
+behind it.
+
+### A button cannot show its own state
+
+`drawButton` (`render_page_movy.mjs:1344`) draws the button graphic and
+nothing else, and the renderer says why in its own comment: *"a trigger has no
+state, so nothing else on the screen changes when you click it."* A write-only
+parameter's cell therefore shows the widget plus its **static label**;
+whatever `get_param` returns for it appears only in the header, and only while
+the knob is held.
+
+So `PLAY` on the grid reads `PLAY` whether the ensemble is running or not, and
+`REC 3` reads `REC 3` whether or not loop 3 is recording. Both buttons do
+carry a full state vocabulary — `PLAY`/`STOP`, `REC`/`STOP`/`DUB`/`PLAY` — but
+that vocabulary is for the header.
+
+This is the whole reason the Orbits page has to report recording as well as
+position: it is the only surface that can.
 
 ### PHASE slides; it does not jump
 
