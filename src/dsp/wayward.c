@@ -18,9 +18,9 @@
  * pages are one CHILD LEVEL that the host multiplies):
  *
  *   Main    REC 1 REC 2 REC 3 PLAY  /  REC 4 REC 5 REC 6 RSYN
+ *   Shape   BASE  SPRD  WIDEN ....  /  ....  ....  ....  CLEAR
  *   Loop    LOOP  TRIG  START END   /  BPM   BEAT  FIT   PHAS
  *           (one page for all six; LOOP chooses which)
- *   Shape   BASE  SPRD  WIDEN ....  /  ....  ....  ....  CLEAR
  *   Mix     1     2     3     DRY   /  4     5     6     OUT
  *   Orbits  1     2     3     ....  /  4     5     6     ALIGN
  *
@@ -1312,8 +1312,8 @@ static int build_ui_hierarchy(char *buf, int len) {
             "{\"key\":\"master_resync\",\"label\":\"Resync\"},"
             /* The order of these nav entries IS the bank order: the page you
              * reach for most often first, and the one you only read last. */
-            "{\"level\":\"loops\",\"label\":\"Loop\"},"
             "{\"level\":\"shape\",\"label\":\"Shape\"},"
+            "{\"level\":\"loops\",\"label\":\"Loop\"},"
             "{\"level\":\"mix\",\"label\":\"Mix\"},"
             "{\"level\":\"orbits\",\"label\":\"Orbits\"}]}"
         /* ORBITS: where each loop is in its own cycle, and when they next

@@ -254,8 +254,8 @@ int main(void) {
             const char *h = strstr(ui, "\"level\":\"shape\"");
             const char *m = strstr(ui, "\"level\":\"mix\"");
             const char *r = strstr(ui, "\"level\":\"orbits\"");
-            check(o && h && m && r && o < h && h < m && m < r,
-                  "test1: the bank runs Main, Loop, Shape, Mix, Orbits");
+            check(o && h && m && r && h < o && o < m && m < r,
+                  "test1: the bank runs Main, Shape, Loop, Mix, Orbits");
         }
         check(strstr(ui, "\"\",\"master_clear\"") != NULL,
               "test1: CLEAR sits in Shape's far corner, the cell furthest from\n"
@@ -278,8 +278,8 @@ int main(void) {
             const char *h = strstr(ui, "\"level\":\"shape\"");
             const char *m = strstr(ui, "\"level\":\"mix\"");
             const char *r = strstr(ui, "\"level\":\"orbits\"");
-            check(o && h && m && r && o < h && h < m && m < r,
-                  "test1: the bank runs Main, Loop, Shape, Mix, Orbits");
+            check(o && h && m && r && h < o && o < m && m < r,
+                  "test1: the bank runs Main, Shape, Loop, Mix, Orbits");
         }
 
         api->destroy_instance(inst);

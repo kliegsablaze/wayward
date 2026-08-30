@@ -98,8 +98,9 @@ and reuses it, so loop 5 is always in the same place. On Mix and Orbits the
 right-hand column is then "everything that is not one of the six": DRY and
 OUT, ALIGN.
 
-The bank runs **Main, Loop, Shape, Mix, Orbits** — roughly the order you reach
-for them, ending on the one page that is only ever read.
+The bank runs **Main, Shape, Loop, Mix, Orbits** — the two pages that set the
+piece up, then the one that tunes each loop, then the two that report on the
+result, ending on the page that is only ever read.
 
 ### Main
 
@@ -117,59 +118,6 @@ together and away from the six because they act on all of them.
 | `loopN_record` | trigger | Three destinations from one button, as in Forgetful: an idle loop starts recording, a recording loop closes the take, and a loaded loop toggles **overdub**. Reads `REC` → `STOP` → `DUB` → `PLAY`. |
 | `master_play` | trigger | Zeroes all six phases at the same frame and runs. That shared moment is what the whole piece drifts away from, and what the Orbits countdown measures from. |
 | `master_resync` | trigger | Re-zeroes every phase *without* stopping — pull the ensemble back into unison mid-performance. |
-
-### Orbits
-
-```
-1      2      3      ····
-4      5      6      ALIGN
-```
-
-Where each loop is in its own cycle, and when they next all meet. This page is
-the instrument's own behaviour made visible; without it the drift is audible
-but not legible.
-
-`loopN_cycle` is read-only, one per loop:
-
-| value | |
-|---|---|
-| `-` | nothing recorded |
-| `REC` | recording right now |
-| `S` | has a take, ensemble stopped |
-| `0`–`99` | playing, and how far through its cycle |
-| `O42` | overdubbing, and how far through its cycle |
-
-This replaced a single six-character `STATE` readout on Main, which had to say
-everything about six loops in six characters. It also has to carry the
-recording state, because with STATE gone this is the only place recording is
-visible at all — a write-only trigger's cell shows its static label and
-nothing else.
-
-All three spellings are safe against `enumSquareLines`: an all-digit value
-goes straight to one line, a lone `-` has no alphanumeric beside it to be read
-as a word separator, and `O42` is neither all digits nor separated.
-
-`master_align` is the realignment countdown, and it is exact arithmetic rather
-than a search. A loop's period is `beats × 60/bpm` seconds, so with whole-number
-tempi the periods are rational; the least common multiple of a set of fractions
-is `lcm(numerators) / gcd(denominators)`. The answer is prettier than it has
-any right to be:
-
-> **Six loops all at BEAT 4 come back together every 240 seconds at any whole
-> tempi at all**, because in that time each completes exactly its own BPM count
-> of cycles. Change one loop's BEAT and the figure moves — 3 against 4 needs
-> `lcm(3,4) = 12` quarter notes, so twelve minutes.
-
-Under ten minutes it counts seconds; past that it switches to minutes (`12M`),
-since a five-character cell cannot hold 720 seconds usefully. It reads `-` when
-nothing is loaded or the ensemble is stopped, and it is borrowed by CLEAR for
-its fifteen-second countdown — the only readout left, and fifteen seconds
-matter more in the moment than a figure measured in minutes.
-
-**The countdown assumes nothing has been retuned since the last alignment.**
-Turn a BPM or a BEAT and the loops no longer share the instant it counts from,
-so it jumps to describe the new arrangement rather than the old one. RESYNC
-makes it true again.
 
 ### Shape
 
@@ -191,27 +139,6 @@ left, which is why none of it is on Main.
 
 CLEAR sits in the far corner — the cell furthest from anything reached in a
 hurry, and now on a page you have to navigate to.
-
-### Mix
-
-```
-1      2      3      DRY
-4      5      6      OUT
-```
-
-Every level in the module on one page. `loopN_volume` sits in the same 3×2
-block as everywhere else — the `_volume` suffix is what makes the host render a
-fader rather than a dial — with the two masters in the right-hand column.
-
-| key | type | |
-|---|---|---|
-| `master_dry` | float 0–1, `unit:"%"` | The live input's level, defaulting to full: an effect that silences its input is a bug. Not a dry/wet crossfade — the loops carry their own levels. |
-| `master_out` | float 0–1, `unit:"%"` | The loop ensemble's level. Kept off the dry path so an idle module passes audio through bit-exact. |
-
-**The faders reach 200%**, with the default left at 80% so unity sits
-comfortably inside the travel. Six quiet takes summed can need lifting, and a
-loop pushed past unity into the soft clipper is a usable sound rather than an
-accident.
 
 ### Loop — one page for all six
 
@@ -308,6 +235,80 @@ labels or indices, so an enum whose labels are bare numbers is ambiguous on
 the wire — `"2"` is both the label `2` and the index 2. Free integers also
 turned out more musical: 7 beats against 8 phases beautifully, and the
 restricted set would have forbidden it.
+
+### Mix
+
+```
+1      2      3      DRY
+4      5      6      OUT
+```
+
+Every level in the module on one page. `loopN_volume` sits in the same 3×2
+block as everywhere else — the `_volume` suffix is what makes the host render a
+fader rather than a dial — with the two masters in the right-hand column.
+
+| key | type | |
+|---|---|---|
+| `master_dry` | float 0–1, `unit:"%"` | The live input's level, defaulting to full: an effect that silences its input is a bug. Not a dry/wet crossfade — the loops carry their own levels. |
+| `master_out` | float 0–1, `unit:"%"` | The loop ensemble's level. Kept off the dry path so an idle module passes audio through bit-exact. |
+
+**The faders reach 200%**, with the default left at 80% so unity sits
+comfortably inside the travel. Six quiet takes summed can need lifting, and a
+loop pushed past unity into the soft clipper is a usable sound rather than an
+accident.
+
+### Orbits
+
+```
+1      2      3      ····
+4      5      6      ALIGN
+```
+
+Where each loop is in its own cycle, and when they next all meet. This page is
+the instrument's own behaviour made visible; without it the drift is audible
+but not legible.
+
+`loopN_cycle` is read-only, one per loop:
+
+| value | |
+|---|---|
+| `-` | nothing recorded |
+| `REC` | recording right now |
+| `S` | has a take, ensemble stopped |
+| `0`–`99` | playing, and how far through its cycle |
+| `O42` | overdubbing, and how far through its cycle |
+
+This replaced a single six-character `STATE` readout on Main, which had to say
+everything about six loops in six characters. It also has to carry the
+recording state, because with STATE gone this is the only place recording is
+visible at all — a write-only trigger's cell shows its static label and
+nothing else.
+
+All three spellings are safe against `enumSquareLines`: an all-digit value
+goes straight to one line, a lone `-` has no alphanumeric beside it to be read
+as a word separator, and `O42` is neither all digits nor separated.
+
+`master_align` is the realignment countdown, and it is exact arithmetic rather
+than a search. A loop's period is `beats × 60/bpm` seconds, so with whole-number
+tempi the periods are rational; the least common multiple of a set of fractions
+is `lcm(numerators) / gcd(denominators)`. The answer is prettier than it has
+any right to be:
+
+> **Six loops all at BEAT 4 come back together every 240 seconds at any whole
+> tempi at all**, because in that time each completes exactly its own BPM count
+> of cycles. Change one loop's BEAT and the figure moves — 3 against 4 needs
+> `lcm(3,4) = 12` quarter notes, so twelve minutes.
+
+Under ten minutes it counts seconds; past that it switches to minutes (`12M`),
+since a five-character cell cannot hold 720 seconds usefully. It reads `-` when
+nothing is loaded or the ensemble is stopped, and it is borrowed by CLEAR for
+its fifteen-second countdown — the only readout left, and fifteen seconds
+matter more in the moment than a figure measured in minutes.
+
+**The countdown assumes nothing has been retuned since the last alignment.**
+Turn a BPM or a BEAT and the loops no longer share the instant it counts from,
+so it jumps to describe the new arrangement rather than the old one. RESYNC
+makes it true again.
 
 ### CLEAR
 
