@@ -85,7 +85,7 @@ are effectively capped at 5–6 by the cell width.
 
 ```
 PLAY   SYNC   BASE   SPRD
-ENS    RSYN   WIDEN  ····
+STATE  RSYN   WIDEN  ····
 ```
 
 | key | type | |
@@ -94,12 +94,12 @@ ENS    RSYN   WIDEN  ····
 | `master_sync` | enum `FREE`/`MOVE` | `MOVE` also starts on the host transport and tracks `get_bpm()` as BASE. |
 | `master_base` | float 40–200, step 1 | Reference tempo. |
 | `master_spread` | float −12…+12, step 1 | Loop *i* runs at `base + i × spread`. **0 locks all six in unison**; the return to 0 is the piece's largest gesture. Writes the six per-loop tempi, which stay individually editable afterwards. |
-| `master_ens` | enum, `access:"read"` | Six characters, one per loop: `.` empty, `S` has a take but stopped, `P` playing, `O` overdubbing, `R` recording. This is where transport state actually lives — the glyphs are constrained by the renderer, not chosen for looks; see below. |
+| `master_state` | enum, `access:"read"` | Six characters, one per loop: `.` empty, `S` has a take but stopped, `P` playing, `O` overdubbing, `R` recording. This is where transport state actually lives — the glyphs are constrained by the renderer, not chosen for looks; see below. |
 | `master_resync` | trigger | Re-zeroes every phase *without* stopping — pull the ensemble back into unison mid-performance. |
 | `master_widen` | float 0–1, `unit:"%"` | A stereo *spread* control, not a position control. At 0 all six loops sit centred; turning it up fans them progressively across the stereo field. Six loops phasing in mono turn to mud; the same six spread across the image read as voices you can follow individually. Lives on Main because it shapes the ensemble, not the balance. |
 | `""` | | A load-bearing blank cell. |
 
-### Why the transport state is in ENS and not on the button
+### Why the transport state is in STATE and not on the button
 
 `drawButton` (`render_page_movy.mjs:1344`) draws the button graphic and
 nothing else, and the renderer says why in its own comment: *"a trigger has no
@@ -113,12 +113,12 @@ So `PLAY` on the grid reads `PLAY` whether the ensemble is running or not, and
 carry a full state vocabulary — that vocabulary is simply for the header.
 
 Making PLAY an ordinary two-option enum would put its state permanently on
-screen at the cost of the button and its press flash. Rejected: ENS is one
+screen at the cost of the button and its press flash. Rejected: STATE is one
 cell away and reports all six loops at once, which is more than a transport
 readout would say. The known gap is that an ensemble with nothing recorded
 reads `......` whether running or stopped.
 
-### What the ENS readout may contain
+### What the STATE readout may contain
 
 The enum square puts every value through `enumSquareLines()` in schwung's
 `shared/param_pages/font5x3.mjs`, which imposes three rules that between them
@@ -267,7 +267,7 @@ audio. Same trade Forgetful makes.
    Gets all eight pages onto the device before any DSP exists. ← *done*
 2. Record and window playback on one loop: REC, START, END, TRIG.
 3. The period counter: BPM, BEAT, PAD fit, global PLAY.
-4. Six loops, the SPREAD macro, RSYN, the ENS readout.
+4. Six loops, the SPREAD macro, RSYN, the STATE readout.
 5. SPEED and RPT fit modes, PHASE, the Mix page.
 6. `SYNC MOVE` against the host transport — last, because it is the only part
    that depends on anything outside the module.

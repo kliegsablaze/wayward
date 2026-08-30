@@ -16,8 +16,8 @@
  * PAGES (one ui_hierarchy level each; the host renders 8 knobs per page,
  * 4 across x 2 rows):
  *
- *   Main    PLAY  SYNC  BASE  SPRD  /  ENS   RSYN  DRY   ....
- *   Mix     1     2     3     4     /  5     6     OUT   PAN
+ *   Main    PLAY  SYNC  BASE  SPRD  /  STATE RSYN  WIDEN ....
+ *   Mix     1     2     3     4     /  5     6     DRY   OUT
  *   Loop 1  REC   TRIG  START END   /  BPM   BEAT  FIT   PHAS
  *   ...     (Loop 2..6 identical)
  *
@@ -307,7 +307,7 @@ static char loop_status_char(const inst_t *s, const loop_t *loop) {
     return loop->overdubbing ? 'O' : 'P';
 }
 
-static int master_ens_text(const inst_t *s, char *buf, int len) {
+static int master_state_text(const inst_t *s, char *buf, int len) {
     char code[NUM_LOOPS];
     for (int i = 0; i < NUM_LOOPS; i++) {
         code[i] = loop_status_char(s, &s->loops[i]);
@@ -588,7 +588,7 @@ static int build_chain_params(char *buf, int len) {
         /* A read-only ENUM, not a read-only string: a string renders through
          * drawOpaqueBox at about two characters wide, where the enum-square
          * renderer gives a proper bordered cell. */
-        ",{\"key\":\"master_ens\",\"name\":\"ENS\",\"type\":\"enum\","
+        ",{\"key\":\"master_state\",\"name\":\"STATE\",\"type\":\"enum\","
           "\"options\":[\"-\"],\"access\":\"read\"}"
         ",{\"key\":\"master_resync\",\"name\":\"RSYN\",\"type\":\"enum\","
           "\"options\":%s,\"access\":\"write\"}"
@@ -679,13 +679,13 @@ static int build_ui_hierarchy(char *buf, int len) {
            * are read together: BASE is where the piece is, SPRD is how fast
            * it comes apart. */
           "\"knobs\":[\"master_play\",\"master_sync\",\"master_base\",\"master_spread\","
-                     "\"master_ens\",\"master_resync\",\"master_widen\",\"\"],"
+                     "\"master_state\",\"master_resync\",\"master_widen\",\"\"],"
           "\"params\":["
             "{\"key\":\"master_play\",\"label\":\"Play\"},"
             "{\"key\":\"master_sync\",\"label\":\"Sync\"},"
             "{\"key\":\"master_base\",\"label\":\"Base\"},"
             "{\"key\":\"master_spread\",\"label\":\"Spread\"},"
-            "{\"key\":\"master_ens\",\"label\":\"Ens\"},"
+            "{\"key\":\"master_state\",\"label\":\"State\"},"
             "{\"key\":\"master_resync\",\"label\":\"Resync\"},"
             "{\"key\":\"master_widen\",\"label\":\"Widen\"},"
             "{\"level\":\"mix\",\"label\":\"Mix\"},"
@@ -742,7 +742,7 @@ static int v2_get_param(void *instance, const char *key, char *buf, int len) {
         return snprintf(buf, len, "%s", SYNC_LABELS[s->sync_mode]);
     if (strcmp(key, "master_base") == 0)   return snprintf(buf, len, "%.0f", (double)s->base_bpm);
     if (strcmp(key, "master_spread") == 0) return snprintf(buf, len, "%.0f", (double)s->spread);
-    if (strcmp(key, "master_ens") == 0)    return master_ens_text(s, buf, len);
+    if (strcmp(key, "master_state") == 0)  return master_state_text(s, buf, len);
     if (strcmp(key, "master_dry") == 0)    return snprintf(buf, len, "%.3f", (double)s->dry);
     if (strcmp(key, "master_out") == 0)    return snprintf(buf, len, "%.3f", (double)s->out);
     if (strcmp(key, "master_widen") == 0)  return snprintf(buf, len, "%.3f", (double)s->widen);

@@ -94,7 +94,7 @@ int main(void) {
               "test1: ui_hierarchy fits its 8192 buffer with headroom");
 
         const char *master[] = { "master_play", "master_sync", "master_base",
-                                 "master_spread", "master_ens", "master_resync",
+                                 "master_spread", "master_state", "master_resync",
                                  "master_dry", "master_out", "master_widen" };
         for (size_t i = 0; i < sizeof(master) / sizeof(master[0]); i++) {
             char probe[64];
@@ -260,22 +260,22 @@ int main(void) {
         api->destroy_instance(inst);
     }
 
-    /* ---- test 7: the record state machine and the ENS readout ---------- */
+    /* ---- test 7: the record state machine and the STATE readout ---------- */
     {
         void *inst = api->create_instance(NULL, NULL);
 
-        api->get_param(inst, "master_ens", buf, sizeof(buf));
+        api->get_param(inst, "master_state", buf, sizeof(buf));
         check(strcmp(buf, "......") == 0,
-              "test7: ENS shows six empty loops at startup");
+              "test7: STATE shows six empty loops at startup");
 
         /* A trigger fires on anything that is not the idle spelling. */
         api->set_param(inst, "loop3_record", "-");
-        api->get_param(inst, "master_ens", buf, sizeof(buf));
+        api->get_param(inst, "master_state", buf, sizeof(buf));
         check(strcmp(buf, "......") == 0,
               "test7: writing the idle spelling does not fire a trigger");
 
         api->set_param(inst, "loop3_record", "GO");
-        api->get_param(inst, "master_ens", buf, sizeof(buf));
+        api->get_param(inst, "master_state", buf, sizeof(buf));
         check(strcmp(buf, "..R...") == 0,
               "test7: REC on loop 3 shows R in the third position only");
 
@@ -292,7 +292,7 @@ int main(void) {
          * changes shape in step 2, when process_block starts filling the
          * buffer. */
         api->set_param(inst, "loop3_record", "GO");
-        api->get_param(inst, "master_ens", buf, sizeof(buf));
+        api->get_param(inst, "master_state", buf, sizeof(buf));
         check(strcmp(buf, "......") == 0,
               "test7: a take under the 50 ms minimum is discarded");
 
@@ -300,10 +300,10 @@ int main(void) {
          * as a word separator: one of those splits the value and shifts every
          * position after it, so the ensemble reads wrong rather than short. */
         api->set_param(inst, "loop2_record", "GO");
-        api->get_param(inst, "master_ens", buf, sizeof(buf));
-        check(strcmp(buf, ".R....") == 0, "test7: ENS tracks a second loop");
+        api->get_param(inst, "master_state", buf, sizeof(buf));
+        check(strcmp(buf, ".R....") == 0, "test7: STATE tracks a second loop");
         check(strpbrk(buf, "-_+ ") == NULL,
-              "test7: ENS contains no character the enum-square renderer\n"
+              "test7: STATE contains no character the enum-square renderer\n"
               "       would break the value on");
 
         api->destroy_instance(inst);
