@@ -120,6 +120,7 @@ footer{margin-top:70px;border-top:1px solid var(--line);padding:32px 0 60px;font
   <a class="s" href="#mix-page">Mix</a>
   <a class="s" href="#orbits-page">Orbits</a>
   <a class="s" href="#drift">The drift</a>
+  <a class="s" href="#lineage">Where it comes from</a>
   <a class="s" href="#ideas">Ideas</a>
 </div></nav>
 
@@ -144,10 +145,11 @@ footer{margin-top:70px;border-top:1px solid var(--line);padding:32px 0 60px;font
       105 — and press play. They begin on the same instant and then come
       apart, because a loop at 101 is very slightly shorter than a loop at
       100, and a hair of difference repeated a hundred times is a minute.</p>
-      <p>This is the oldest trick in tape music: two loops of unequal length,
-      started together, left to disagree. Reich's <i>Come Out</i>, Eno's
-      <i>Discreet Music</i>, Basinski's <i>Disintegration Loops</i>. Wayward's
-      contribution is to put the disagreement on a knob.</p>
+      <p>This is one of the oldest ideas in the music of the last seventy
+      years: independent periodic things, started together and left to
+      disagree. A hundred metronomes, two tape machines, an ensemble each
+      moving at its own pace. Wayward's contribution is only to put the
+      disagreement on a knob — see <a href="#lineage">where it comes from</a>.</p>
     </div>
     <div>
       <p><b>Nothing is stretched to fit.</b> If your fragment is shorter than
@@ -349,6 +351,45 @@ footer{margin-top:70px;border-top:1px solid var(--line);padding:32px 0 60px;font
   minutes each loop completes exactly its own BPM count of cycles, so they all
   arrive at once. Change one loop's BEAT and the figure moves: 3 against 4
   needs twelve beats, so twelve minutes. ALIGN does this arithmetic for you.</div>
+</section>
+
+
+<!-- ============================ LINEAGE ============================ -->
+<section id="lineage">
+  <div class="eyebrow">Where it comes from</div>
+  <h2 class="sh">Six forefathers</h2>
+  <p>None of this is new. Wayward is a small machine for doing something
+  composers have been doing by other means since the early sixties, and it is
+  worth knowing whose shoulders the knobs are standing on — not least because
+  each of them answered a question the module also has to answer.</p>
+
+  <div class="flist">
+    <div class="frow"><div><div class="fn">Ligeti</div><div class="fk">Poème symphonique · 1962</div></div>
+      <div class="fd">A hundred wind-up metronomes, set to different tempi, started together and left to run down. It is the closest thing to Wayward that exists: many independent periodic sources, all begun on one instant, differing in nothing but rate, and a whole piece emerging from the arithmetic of their disagreement. Nobody performs it. You start it, and it happens.</div></div>
+
+    <div class="frow"><div><div class="fn">Reich</div><div class="fk">It's Gonna Rain · 1965 · Come Out · 1966 · Piano Phase · 1967</div></div>
+      <div class="fd">Phasing: two copies of the same material at slightly different rates, sliding through every possible relationship and arriving back where they began. Reich's insight was that the <i>transition</i> is the piece, not the endpoints — which is why SPREAD is a knob you leave alone once it's set.
+      <br>One difference worth keeping straight. Reich's tape drift came from two machines running at different <b>speeds</b>, which shifts pitch; Wayward drifts by giving loops different <b>lengths</b>, which doesn't. Same phenomenon, different cause. <b>PHAS</b> is the exception — it briefly runs a loop fast to pull it into place, which is Reich's method exactly, and literally what his players do to phase <i>Piano Phase</i> with their hands.</div></div>
+
+    <div class="frow"><div><div class="fn">Riley</div><div class="fk">In C · 1964</div></div>
+      <div class="fd">Fifty-three fragments, any number of players, each moving through them at their own pace. The ensemble continuously falls out of and back into alignment, and no two performances are the same. Reich gives you the two-voice case; Riley gives you the crowd — which is the step from a pair of tape machines to six loops that each keep their own time.</div></div>
+
+    <div class="frow"><div><div class="fn">Nancarrow</div><div class="fk">Studies for Player Piano · Nos. 37, 40, 41 · 1950s–60s</div></div>
+      <div class="fd">The tempo canons, written for player piano because no ensemble could play them. <i>Study No. 37</i> runs twelve simultaneous tempos. A canon at 100:101:102 is exactly what SPREAD makes, composed by hand forty years earlier.
+      <br>He also poses the question this module had to answer. <i>Studies Nos. 40 and 41</i> use <b>irrational</b> tempo ratios, so the voices never realign and the piece has no return. Wayward snaps every tempo to a whole number to take the opposite side: the ensemble always comes home, and ALIGN tells you when.</div></div>
+
+    <div class="frow"><div><div class="fn">Eno</div><div class="fk">Music for Airports · 1978</div></div>
+      <div class="fd">Tape loops cut to different lengths, so that sung notes recur at intervals which never coincide the same way twice. This is Wayward's mechanism precisely — and it is also where the silence comes from. Eno's loops are mostly rest: a note, then a long emptiness, and because the emptinesses differ the pattern never repeats. That is the argument for <b>PAD</b> being the default and for not stretching anything to fit.</div></div>
+
+    <div class="frow"><div><div class="fn">Schaeffer</div><div class="fk">Étude aux chemins de fer · 1948</div></div>
+      <div class="fd">The locked groove: a disc cut so the needle could not escape, turning a recording into something that repeats forever. The loop as a musical object rather than a defect. Everything above depends on it, and so does every REC button here.</div></div>
+  </div>
+
+  <div class="note"><b>Not Basinski.</b> Earlier drafts of these pages named
+  <i>The Disintegration Loops</i>, and it does not belong. That piece is about
+  a medium destroying itself over repetitions — which is the lineage of
+  <a href="https://github.com/kliegsablaze/forgetful">Forgetful</a>, this
+  module's sibling. Wayward's loops do not decay at all. They only disagree.</div>
 </section>
 
 <!-- ============================ IDEAS ============================ -->

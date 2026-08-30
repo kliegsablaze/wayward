@@ -2,8 +2,8 @@
  *
  * A Schwung audio_fx module for Ableton Move. Six independent recordings,
  * each looped at its own tempo. Set them to 100, 101, 102, 103, 104 and 105
- * BPM and they slide out of alignment and back over minutes — the Reich /
- * Eno / Basinski tape-loop mechanism, on eight knobs.
+ * BPM and they slide out of alignment and back over minutes — Ligeti's
+ * hundred metronomes and Reich's two tape machines, on eight knobs.
  *
  * THE ENGINE, in one paragraph. Each loop holds three numbers: the WINDOW
  * that START and END cut out of its take (W frames), the PERIOD its tempo

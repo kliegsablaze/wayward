@@ -9,6 +9,11 @@ Nothing is stretched to fit: a loop that is shorter than its beat is padded
 with silence, and one that is longer is simply cut off. The rests are what
 make the drift audible.
 
+The idea is old — Ligeti's hundred metronomes, Reich's two tape machines,
+Riley's *In C*, Nancarrow's tempo canons, Eno's unequal tape loops. Wayward's
+contribution is to put the disagreement on a knob. The manual has
+[the whole lineage](https://kliegsablaze.github.io/wayward/#lineage).
+
 A [Schwung](https://github.com/charlesvestal/schwung) `audio_fx` module for
 Ableton Move, and a sibling to
 [Forgetful](https://github.com/kliegsablaze/forgetful) — which took one input

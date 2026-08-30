@@ -9,10 +9,19 @@ You record six fragments from the incoming audio, tell each one what tempo its
 loop should keep — 100, 101, 102, 103, 104, 105 — press PLAY, and the six
 drift out of alignment and back over minutes.
 
-That is the Reich / Eno / Basinski tape-loop mechanism: loops of unequal
-length, started together, left to disagree. *Come Out*, *Discreet Music*, the
-*Disintegration Loops*. Wayward's contribution is to make the disagreement a
-knob.
+That is an old mechanism: independent periodic sources, started together and
+left to disagree. Ligeti's *Poème symphonique* (1962) is a hundred wind-up
+metronomes at different rates; Reich's *It's Gonna Rain* (1965) is two tape
+machines running the same loop; Riley's *In C* (1964) is an ensemble each
+moving at its own pace; Eno's *Music for Airports* (1978) is tape loops cut to
+different lengths so the notes never recur in the same combination. Nancarrow's
+tempo canons — *Study No. 37* runs twelve simultaneous tempos — are the same
+idea written down. Wayward's contribution is to make the disagreement a knob.
+
+**Not Basinski**, though earlier drafts of this file said so. *The
+Disintegration Loops* is about a medium destroying itself over repetitions,
+which is [Forgetful](https://github.com/kliegsablaze/forgetful)'s lineage.
+Wayward's loops do not decay at all; they only disagree.
 
 The module does not time-stretch to fit a tempo. Each loop's recorded window
 is **padded with silence** to reach its beat length, or **cut off** by it.
@@ -80,6 +89,11 @@ the time the first plays `p/g` cycles, the second plays `q/g`.**
 So the *relationship between the numbers* is the composition, far more than
 their size. `BPM`, `BASE` and `SPREAD` therefore snap to integers: 100 against
 101 is a four-minute breath, while 100 against 100.37 is only a smear.
+
+That snapping takes a deliberate side in an old argument. Nancarrow's *Studies
+Nos. 40 and 41* are canons at **irrational** tempo ratios, so their voices
+never realign and the piece has no return. Whole numbers take the other side:
+the ensemble always comes home, and `ALIGN` says when.
 
 With all six running, every pair has its own realignment time and the full
 ensemble coincides again only after a number of beats divisible by all six
