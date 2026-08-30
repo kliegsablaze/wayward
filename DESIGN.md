@@ -18,11 +18,6 @@ different lengths so the notes never recur in the same combination. Nancarrow's
 tempo canons — *Study No. 37* runs twelve simultaneous tempos — are the same
 idea written down. Wayward's contribution is to make the disagreement a knob.
 
-**Not Basinski**, though earlier drafts of this file said so. *The
-Disintegration Loops* is about a medium destroying itself over repetitions,
-which is [Forgetful](https://github.com/kliegsablaze/forgetful)'s lineage.
-Wayward's loops do not decay at all; they only disagree.
-
 The module does not time-stretch to fit a tempo. Each loop's recorded window
 is **padded with silence** to reach its beat length, or **cut off** by it.
 That honesty is the point: you hear a sound and then a rest, and the rests are
