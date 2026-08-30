@@ -239,18 +239,48 @@ int main(void) {
         check(strstr(ui, "\"loop3_record\",\"master_play\"") != NULL,
               "test1: Main puts the six RECs in a 3x2 block with the transport\n"
               "       in the right-hand column");
-        check(strstr(ui, "\"master_align\",\"\",\"loop4_cycle\"") != NULL,
-              "test1: Orbits puts ALIGN at the end of the top row, with the\n"
-              "       second row's first cell blank");
+        check(strstr(ui, "\"loop6_cycle\",\"master_align\"") != NULL,
+              "test1: Orbits puts the six in a 3x2 block with ALIGN in the far\n"
+              "       corner, the one cell that speaks for the ensemble rather\n"
+              "       than for a loop");
+        check(strstr(ui, "\"loop3_volume\",\"master_dry\"") != NULL
+              && strstr(ui, "\"loop6_volume\",\"master_out\"") != NULL,
+              "test1: Mix carries every level in the module — the six loops,\n"
+              "       DRY and OUT — with the two masters in the right-hand\n"
+              "       column");
+        /* The order of root's nav entries is the bank order. */
+        {
+            const char *o = strstr(ui, "\"level\":\"loops\"");
+            const char *h = strstr(ui, "\"level\":\"shape\"");
+            const char *m = strstr(ui, "\"level\":\"mix\"");
+            const char *r = strstr(ui, "\"level\":\"orbits\"");
+            check(o && h && m && r && o < h && h < m && m < r,
+                  "test1: the bank runs Main, Loop, Shape, Mix, Orbits");
+        }
         check(strstr(ui, "\"\",\"master_clear\"") != NULL,
               "test1: CLEAR sits in Shape's far corner, the cell furthest from\n"
               "       anything reached in a hurry");
         check(strstr(ui, "\"loop3_record\",\"master_play\"") != NULL,
               "test1: Main puts the six RECs in a 3x2 block with the transport\n"
               "       in the right-hand column");
-        check(strstr(ui, "\"master_align\",\"\",\"loop4_cycle\"") != NULL,
-              "test1: Orbits puts ALIGN at the end of the top row, with the\n"
-              "       second row's first cell blank");
+        check(strstr(ui, "\"loop6_cycle\",\"master_align\"") != NULL,
+              "test1: Orbits puts the six in a 3x2 block with ALIGN in the far\n"
+              "       corner, the one cell that speaks for the ensemble rather\n"
+              "       than for a loop");
+        check(strstr(ui, "\"loop3_volume\",\"master_dry\"") != NULL
+              && strstr(ui, "\"loop6_volume\",\"master_out\"") != NULL,
+              "test1: Mix carries every level in the module — the six loops,\n"
+              "       DRY and OUT — with the two masters in the right-hand\n"
+              "       column");
+        /* The order of root's nav entries is the bank order. */
+        {
+            const char *o = strstr(ui, "\"level\":\"loops\"");
+            const char *h = strstr(ui, "\"level\":\"shape\"");
+            const char *m = strstr(ui, "\"level\":\"mix\"");
+            const char *r = strstr(ui, "\"level\":\"orbits\"");
+            check(o && h && m && r && o < h && h < m && m < r,
+                  "test1: the bank runs Main, Loop, Shape, Mix, Orbits");
+        }
 
         api->destroy_instance(inst);
     }

@@ -93,8 +93,13 @@ Five pages, one `ui_hierarchy` level each. Eight knobs per page, 4 across ×
 are effectively capped at 5–6 by the cell width.
 
 **The six loops occupy the same 3×2 block on every page that addresses all six
-at once** — Main, Orbits, Mix. The hand learns one arrangement of the ensemble
-and reuses it, so loop 5 is always in the same place.
+at once** — Main, Mix, Orbits. The hand learns one arrangement of the ensemble
+and reuses it, so loop 5 is always in the same place. On Mix and Orbits the
+right-hand column is then "everything that is not one of the six": DRY and
+OUT, ALIGN.
+
+The bank runs **Main, Loop, Shape, Mix, Orbits** — roughly the order you reach
+for them, ending on the one page that is only ever read.
 
 ### Main
 
@@ -116,8 +121,8 @@ together and away from the six because they act on all of them.
 ### Orbits
 
 ```
-1      2      3      ALIGN
-····   4      5      6
+1      2      3      ····
+4      5      6      ALIGN
 ```
 
 Where each loop is in its own cycle, and when they next all meet. This page is
@@ -170,19 +175,18 @@ makes it true again.
 
 ```
 BASE   SPRD   WIDEN  ····
-DRY    OUT    ····   CLEAR
+····   ····   ····   CLEAR
 ```
 
-How the ensemble is tuned and what leaves it — set once and left, which is why
-none of it is on Main.
+Purely how the ensemble is tuned — where it sits, how fast it comes apart, how
+wide it spreads — and the one control that throws it all away. Set once and
+left, which is why none of it is on Main.
 
 | key | type | |
 |---|---|---|
 | `master_base` | float 40–200, step 1 | Reference tempo. |
 | `master_spread` | float −12…+12, step 1 | Loop *i* runs at `base + i × spread`. **0 locks all six in unison**; the return to 0 is the piece's largest gesture. Writes the six per-loop tempi, which stay individually editable afterwards. |
 | `master_widen` | float 0–1, `unit:"%"` | A stereo *spread*, not a position. At 0 all six sit centred; turning it up fans them across the field. Six loops phasing in mono turn to mud; the same six spread across the image read as voices you can follow. |
-| `master_dry` | float 0–1, `unit:"%"` | The live input's level, defaulting to full: an effect that silences its input is a bug. Not a dry/wet crossfade — the loops carry their own levels. |
-| `master_out` | float 0–1, `unit:"%"` | The loop ensemble's level. Kept off the dry path so that an idle module passes audio through bit-exact. |
 | `master_clear` | trigger | Erases every take and resets every setting, over a 15-second fade. Reads `CLR`, then `KEEP`. See below. |
 
 CLEAR sits in the far corner — the cell furthest from anything reached in a
@@ -191,12 +195,18 @@ hurry, and now on a page you have to navigate to.
 ### Mix
 
 ```
-1      2      3      ····
-4      5      6      ····
+1      2      3      DRY
+4      5      6      OUT
 ```
 
-`loopN_volume`, in the same 3×2 block as everywhere else. The `_volume` suffix
-is what makes the host render a fader rather than a dial.
+Every level in the module on one page. `loopN_volume` sits in the same 3×2
+block as everywhere else — the `_volume` suffix is what makes the host render a
+fader rather than a dial — with the two masters in the right-hand column.
+
+| key | type | |
+|---|---|---|
+| `master_dry` | float 0–1, `unit:"%"` | The live input's level, defaulting to full: an effect that silences its input is a bug. Not a dry/wet crossfade — the loops carry their own levels. |
+| `master_out` | float 0–1, `unit:"%"` | The loop ensemble's level. Kept off the dry path so an idle module passes audio through bit-exact. |
 
 **The faders reach 200%**, with the default left at 80% so unity sits
 comfortably inside the travel. Six quiet takes summed can need lifting, and a

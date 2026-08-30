@@ -18,11 +18,11 @@
  * pages are one CHILD LEVEL that the host multiplies):
  *
  *   Main    REC 1 REC 2 REC 3 PLAY  /  REC 4 REC 5 REC 6 RSYN
- *   Orbits  1     2     3     ALIGN /  ....  4     5     6
- *   Shape   BASE  SPRD  WIDEN ....  /  DRY   OUT   ....  CLEAR
- *   Mix     1     2     3     ....  /  4     5     6     ....
  *   Loop    LOOP  TRIG  START END   /  BPM   BEAT  FIT   PHAS
  *           (one page for all six; LOOP chooses which)
+ *   Shape   BASE  SPRD  WIDEN ....  /  ....  ....  ....  CLEAR
+ *   Mix     1     2     3     DRY   /  4     5     6     OUT
+ *   Orbits  1     2     3     ....  /  4     5     6     ALIGN
  *
  * Eight sections is one more than Forgetful ships. drawBankBar handles any
  * page count up to the display width and the planner caps levels nowhere,
@@ -1310,27 +1310,35 @@ static int build_ui_hierarchy(char *buf, int len) {
             "{\"key\":\"loop6_record\",\"label\":\"Rec 6\"},"
             "{\"key\":\"master_play\",\"label\":\"Play\"},"
             "{\"key\":\"master_resync\",\"label\":\"Resync\"},"
-            "{\"level\":\"orbits\",\"label\":\"Orbits\"},"
+            /* The order of these nav entries IS the bank order: the page you
+             * reach for most often first, and the one you only read last. */
+            "{\"level\":\"loops\",\"label\":\"Loop\"},"
             "{\"level\":\"shape\",\"label\":\"Shape\"},"
             "{\"level\":\"mix\",\"label\":\"Mix\"},"
-            "{\"level\":\"loops\",\"label\":\"Loop\"}]}"
+            "{\"level\":\"orbits\",\"label\":\"Orbits\"}]}"
         /* ORBITS: where each loop is in its own cycle, and when they next
          * all meet. The six sit in the same 3x2 block as everywhere else,
          * and ALIGN takes the cell at the end of the top row — the one place
          * on the page that speaks for the ensemble rather than for a loop. */
         ",\"orbits\":{\"label\":\"Orbits\",\"knobs\":["
-          "\"loop1_cycle\",\"loop2_cycle\",\"loop3_cycle\",\"master_align\","
-          "\"\",\"loop4_cycle\",\"loop5_cycle\",\"loop6_cycle\"]}"
+          "\"loop1_cycle\",\"loop2_cycle\",\"loop3_cycle\",\"\","
+          "\"loop4_cycle\",\"loop5_cycle\",\"loop6_cycle\",\"master_align\"]}"
         /* SHAPE: how the ensemble is tuned and what leaves it. Set once and
          * left, which is why none of it is on Main any more. CLEAR sits in
          * the far corner, the furthest cell on the page from anything
          * reached in a hurry. */
+        /* What is left is purely how the ensemble is tuned — where it sits,
+         * how fast it comes apart, how wide it spreads — and the one control
+         * that throws it all away. */
         ",\"shape\":{\"label\":\"Shape\",\"knobs\":["
           "\"master_base\",\"master_spread\",\"master_widen\",\"\","
-          "\"master_dry\",\"master_out\",\"\",\"master_clear\"]}"
+          "\"\",\"\",\"\",\"master_clear\"]}"
+        /* Every level in the module on one page: the six loops, the live
+         * input, and what leaves. DRY and OUT take the right-hand column, so
+         * the column is "everything that is not one of the six". */
         ",\"mix\":{\"label\":\"Mix\",\"knobs\":["
-          "\"loop1_volume\",\"loop2_volume\",\"loop3_volume\",\"\","
-          "\"loop4_volume\",\"loop5_volume\",\"loop6_volume\",\"\"]}");
+          "\"loop1_volume\",\"loop2_volume\",\"loop3_volume\",\"master_dry\","
+          "\"loop4_volume\",\"loop5_volume\",\"loop6_volume\",\"master_out\"]}");
 
     /* ONE LEVEL FOR ALL SIX LOOPS — a child level, which is host machinery
      * rather than anything this module has to fake.
