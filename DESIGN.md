@@ -190,6 +190,13 @@ also re-points each generic key at the concrete declaration, without which the
 metadata falls back to a guess and a specialised widget degrades into a bare
 0–1 knob.
 
+**This sets the module's minimum host version at 1.0.0**, not the 0.12.1
+Forgetful asks for. `child_key.mjs` exists as far back as 0.12.0, but
+`syncChildIndexFromModule` — the poll that makes the host follow
+`loop_select` — and the `dropChildLevelCache` skip that stops the selector
+going dead after a single move both first ship in **v1.0.0**. On 0.12.x the
+Loop page would render and then refuse to change loops.
+
 **Two details put the selector in cell one**, rather than on the separate
 picker page the planner would otherwise generate:
 

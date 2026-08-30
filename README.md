@@ -41,7 +41,10 @@ Manager's **Install custom module** option, which asks for a GitHub repo link:
 2. Choose **Install custom module**
 3. Give it `https://github.com/kliegsablaze/wayward`
 
-Needs **Schwung 0.12.1 or newer**.
+Needs **Schwung 1.0.0 or newer** — not 0.12.x. The Loop page is a *child
+level*, six loops sharing one page with a selector, and the host machinery
+that makes the selector work (`syncChildIndexFromModule`, and the cache-skip
+that stops it going dead after one move) first shipped in 1.0.0.
 
 Once it is in the catalog, the Module Store will install and update it like
 any other module, and this section and the manual will say so instead.
