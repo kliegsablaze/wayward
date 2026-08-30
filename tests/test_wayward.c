@@ -1283,9 +1283,28 @@ int main(void) {
         api->get_param(inst, "loop_select", buf, sizeof(buf));
         check(strcmp(buf, "1") == 0, "test33: the Loop page opens on loop 1");
 
+        /* DECLARED AS AN INT, and the whole control depends on it. A float
+         * knob's per-detent movement is a fraction of its RANGE and ignores
+         * the declared step — 0.025 for a float 1..6 — so one detent moved
+         * the selection by a fortieth of a loop and the parse floored it
+         * back. An int steps by whole numbers. */
+        api->get_param(inst, "chain_params", buf, sizeof(buf));
+        check(strstr(buf, "\"key\":\"loop_select\",\"name\":\"LOOP\","
+                          "\"type\":\"int\"") != NULL,
+              "test33: the selector is declared int, not float — a float would\n"
+              "        step by 1% of its range per detent and never reach the\n"
+              "        next whole loop");
+
         api->set_param(inst, "loop_select", "4");
         api->get_param(inst, "loop_select", buf, sizeof(buf));
         check(strcmp(buf, "4") == 0, "test33: and follows the knob");
+
+        /* A fractional wire value rounds to the nearest loop rather than
+         * always flooring to the one below. */
+        api->set_param(inst, "loop_select", "3.6");
+        api->get_param(inst, "loop_select", buf, sizeof(buf));
+        check(strcmp(buf, "4") == 0,
+              "test33: a fractional value rounds rather than truncates");
 
         /* A bare number, because the host parses it numerically and treats
          * anything else as "do not move the focus" — which would leave the

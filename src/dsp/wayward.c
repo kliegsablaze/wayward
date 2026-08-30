@@ -1095,7 +1095,9 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
         return;
     }
     if (strcmp(key, "loop_select") == 0) {
-        int v = atoi(val);
+        /* Rounded, not truncated: a wire value that arrives fractional should
+         * land on the nearest loop rather than always the one below it. */
+        int v = (int)lround(atof(val));
         if (v < 1) v = 1;
         if (v > NUM_LOOPS) v = NUM_LOOPS;
         s->loop_select = v;
@@ -1198,14 +1200,31 @@ static int build_chain_params(char *buf, int len) {
             i + 1, i + 1);
     }
 
-    /* The Loop page's instance selector. Declared as a float rather than an
-     * enum of "1".."6": the host reads it with a numeric parse, and numeric
-     * enum labels are ambiguous on this wire anyway. Named LOOP, not SELECT,
-     * because LABEL_CHARS caps a label at five. */
+    /* The Loop page's instance selector.
+     *
+     * "int", NOT "float", and this is the whole control. A float knob's
+     * per-detent movement is a fixed FRACTION OF ITS RANGE and ignores the
+     * declared step entirely — knob_engine.mjs says so outright: step "is a
+     * statement about precision and not about sweep". For a float 1..6 that
+     * is (6-1) * 0.01 * 0.5 = 0.025 per detent, so one detent moved the
+     * selection from 3 to 3.025 and the parse below floored it straight back
+     * to 3. It only appeared to work once enough detents had accumulated to
+     * cross a whole number. Reported from the device as exactly that.
+     *
+     * An int gets max(step, 1% of range) rounded, which is 1, and — because
+     * its range is inside NARROW_RANGE_MAX — four physical detents per value,
+     * the same gesture as every enum on the device. That figure is deliberate
+     * and was raised from one after mrdrums' Current Pad was reported as
+     * "these numbers move crazy fast on a single detent".
+     *
+     * Not an enum either: the host parses this key numerically to find the
+     * focused instance, and numeric enum labels are ambiguous on this wire.
+     *
+     * Named LOOP rather than SELECT because LABEL_CHARS caps a label at
+     * five. */
     pos += snprintf(json + pos, sizeof(json) - pos,
-        ",{\"key\":\"loop_select\",\"name\":\"LOOP\",\"type\":\"float\","
-          "\"min\":1,\"max\":%d,\"default\":1,\"step\":1,"
-          "\"display_format\":\"%%.0f\"}", NUM_LOOPS);
+        ",{\"key\":\"loop_select\",\"name\":\"LOOP\",\"type\":\"int\","
+          "\"min\":1,\"max\":%d,\"default\":1,\"step\":1}", NUM_LOOPS);
 
     /* One cycle readout per loop, for the Orbits page. */
     for (int i = 0; i < NUM_LOOPS; i++) {

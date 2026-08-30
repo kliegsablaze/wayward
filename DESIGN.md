@@ -256,18 +256,34 @@ picker page the planner would otherwise generate:
   `{key}` resolves literally and escapes it.
 
 The host then polls `loop_select` every tick and follows it
-(`syncChildIndexFromModule`), so the selection is the module's to own. It is
-declared as a float 1–6, not an enum of `"1"`…`"6"`: the host parses it
-numerically and treats anything else as "do not move the focus", and numeric
-enum labels are ambiguous on this wire regardless. The label is `LOOP` rather
-than `SELECT` because `LABEL_CHARS` caps a label at five.
+(`syncChildIndexFromModule`), so the selection is the module's to own.
+
+**It is declared `"type":"int"`, and that is the whole control.** A *float*
+knob's per-detent movement is a fixed fraction of its **range** and ignores
+the declared `step` entirely — `knob_engine.mjs` puts it plainly: step *"is a
+statement about precision and not about sweep"*. For a float 1–6 that works
+out at `(6−1) × 0.01 × 0.5 = 0.025` per detent, so one detent moved the
+selection from 3 to 3.025 and the parse floored it straight back to 3. It only
+appeared to work once enough detents had accumulated to cross a whole number.
+Shipped that way in 0.7.0 and reported from the device immediately.
+
+An `int` gets `max(step, 1% of range)` rounded, which is 1 — and because its
+range falls inside `NARROW_RANGE_MAX`, **four physical detents per value**,
+the same gesture as every enum on the device. That figure is deliberate and
+was raised from one after mrdrums' Current Pad was reported as *"these numbers
+move crazy fast on a single detent"*. It is not adjustable from a declaration:
+`knobAcceleration` is internal.
+
+Not an enum either — the host parses this key numerically to find the focused
+instance, and numeric enum labels are ambiguous on this wire. The label is
+`LOOP` rather than `SELECT` because `LABEL_CHARS` caps a label at five.
 
 **What it costs:** you can no longer compare two loops' settings side by side.
 Orbits covers most of that, since it shows where all six are at once.
 
 | key | type | |
 |---|---|---|
-| `loop_select` | float 1–6, step 1 | Which loop the page is editing. |
+| `loop_select` | **int** 1–6 | Which loop the page is editing. Four detents per loop. |
 | `loopN_trig` | trigger | One-shot audition of the window, ignoring the period. |
 | `loopN_start` | float 0–1, `unit:"%"` | Where the window begins in the take. |
 | `loopN_end` | float −1…+1, `unit:"%"` | **A bipolar length measured from START, not a second position.** Centre is a zero-length window; the top half grows it forward from START to the end of the take; the bottom half grows it *backward* from START, played in **reverse**, reaching the head of the take at the extreme. The two halves are mirror images about a silent centre, and the reverse half reaches material the forward half never can. Because END is a length there is no ordering to enforce and no inside-out window to guard against. Resolved **per block, not in `set_param`**, so a knob never snaps back under the hand. |
