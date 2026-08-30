@@ -23,7 +23,7 @@
 extern audio_fx_api_v2_t *move_audio_fx_init_v2(const host_api_v1_t *host);
 
 #define TEST_NUM_LOOPS   6
-#define TEST_PARAM_COUNT 63
+#define TEST_PARAM_COUNT 64
 #define FRAMES 128
 #define SR     44100L
 
@@ -145,7 +145,7 @@ int main(void) {
 
         int keys = count_occurrences(buf, "\"key\":");
         check(keys == TEST_PARAM_COUNT,
-              "test0: chain_params has exactly 63 entries — 9 master, 6 mixer\n"
+              "test0: chain_params has exactly 64 entries — 10 master, 6 mixer\n"
               "       faders, and 8 on each of the six loop pages");
 
         /* snprintf truncates SILENTLY and a module that overflows its JSON
@@ -177,6 +177,7 @@ int main(void) {
 
         const char *master[] = { "master_play", "master_sync", "master_base",
                                  "master_spread", "master_state", "master_resync",
+                                 "master_clear",
                                  "master_dry", "master_out", "master_widen" };
         for (size_t i = 0; i < sizeof(master) / sizeof(master[0]); i++) {
             char probe[64];
@@ -202,9 +203,10 @@ int main(void) {
         check(count_occurrences(ui, "\"level\":") == 7,
               "test1: root carries seven nav entries — Mix and six loops");
         /* One deliberate blank cell on Main. */
-        check(strstr(ui, "\"master_resync\",\"\",\"master_state\"") != NULL,
-              "test1: Main's third cell is a load-bearing blank, holding the\n"
-              "       momentary buttons apart from the readout");
+        check(strstr(ui, "\"master_resync\",\"master_clear\",\"master_state\"") != NULL,
+              "test1: CLEAR occupies Main's third cell, which used to be blank");
+        check(strstr(ui, "\"\"") == NULL,
+              "test1: Main no longer declares a blank cell");
 
         api->destroy_instance(inst);
     }
@@ -1033,6 +1035,129 @@ int main(void) {
               "        instead of teleporting it — a jump splices unrelated\n"
               "        audio together, and a knob sweep does it hundreds of\n"
               "        times a second");
+
+        free(mat);
+        api->destroy_instance(inst);
+    }
+
+
+    /* ---- test 29: CLEAR fades, then wipes ------------------------------ */
+    {
+        void *inst = api->create_instance(NULL, NULL);
+        isolate_loops(api, inst);
+
+        const long TAKE = 22050;
+        int16_t *mat = (int16_t *)malloc(sizeof(int16_t) * TAKE);
+        for (long i = 0; i < TAKE; i++) mat[i] = 12000;
+        record_take(api, inst, "loop1", mat, TAKE);
+        record_take(api, inst, "loop4", mat, TAKE);
+
+        api->set_param(inst, "loop1_fit", "RPT");
+        api->set_param(inst, "loop4_fit", "RPT");
+        api->set_param(inst, "master_play", "GO");
+        api->set_param(inst, "loop1_volume", "1");
+        for (int L = 2; L <= TEST_NUM_LOOPS; L++) {
+            char key[32];
+            snprintf(key, sizeof(key), "loop%d_volume", L);
+            api->set_param(inst, key, L == 4 ? "0" : "0");
+        }
+        run_silence(api, inst, FRAMES * 16);
+
+        /* Level before the clear starts. */
+        int16_t blk[FRAMES * 2];
+        memset(blk, 0, sizeof(blk));
+        api->process_block(inst, blk, FRAMES);
+        int before = 0;
+        for (int i = 0; i < FRAMES; i++) {
+            int v = blk[2 * i]; if (v < 0) v = -v;
+            if (v > before) before = v;
+        }
+        check(before > 8000, "test29: the ensemble is sounding before the clear");
+
+        api->set_param(inst, "master_clear", "GO");
+        api->get_param(inst, "master_clear", buf, sizeof(buf));
+        check(strcmp(buf, "KEEP") == 0,
+              "test29: once running, the button offers to call it off");
+        api->get_param(inst, "master_state", buf, sizeof(buf));
+        check(strncmp(buf, "CLR", 3) == 0,
+              "test29: STATE shows the countdown while a clear is in flight");
+
+        /* Halfway: audibly quieter, but not gone and not yet wiped. */
+        run_silence(api, inst, (long)(7.5 * SR));
+        memset(blk, 0, sizeof(blk));
+        api->process_block(inst, blk, FRAMES);
+        int half = 0;
+        for (int i = 0; i < FRAMES; i++) {
+            int v = blk[2 * i]; if (v < 0) v = -v;
+            if (v > half) half = v;
+        }
+        check(half > before / 4 && half < before * 3 / 4,
+              "test29: halfway through, the ensemble is roughly half as loud —\n"
+              "        the erase announces itself instead of just happening");
+
+        /* And at the end everything is gone and back to defaults. */
+        run_silence(api, inst, (long)(8.0 * SR));
+        api->get_param(inst, "master_state", buf, sizeof(buf));
+        check(strcmp(buf, "......") == 0, "test29: every take is erased");
+        api->get_param(inst, "master_play", buf, sizeof(buf));
+        check(strcmp(buf, "PLAY") == 0, "test29: and the ensemble has stopped");
+        api->get_param(inst, "master_out", buf, sizeof(buf));
+        check(strcmp(buf, "0.800") == 0, "test29: OUT is back to its default");
+        api->get_param(inst, "master_widen", buf, sizeof(buf));
+        check(strcmp(buf, "0.500") == 0, "test29: so is WIDEN");
+        api->get_param(inst, "loop1_volume", buf, sizeof(buf));
+        check(strcmp(buf, "0.800") == 0, "test29: so are the faders");
+        api->get_param(inst, "loop6_bpm", buf, sizeof(buf));
+        check(strcmp(buf, "105") == 0,
+              "test29: and BASE/SPREAD are back to 100 with the six fanned out");
+        api->get_param(inst, "loop1_fit", buf, sizeof(buf));
+        check(strcmp(buf, "PAD") == 0, "test29: and FIT is back to PAD");
+        api->get_param(inst, "master_clear", buf, sizeof(buf));
+        check(strcmp(buf, "CLR") == 0, "test29: the button is ready again");
+
+        free(mat);
+        api->destroy_instance(inst);
+    }
+
+    /* ---- test 30: a clear can be called off ---------------------------- */
+    {
+        void *inst = api->create_instance(NULL, NULL);
+        isolate_loops(api, inst);
+
+        const long TAKE = 22050;
+        int16_t *mat = (int16_t *)malloc(sizeof(int16_t) * TAKE);
+        for (long i = 0; i < TAKE; i++) mat[i] = 12000;
+        record_take(api, inst, "loop1", mat, TAKE);
+        api->set_param(inst, "loop1_fit", "RPT");
+        api->set_param(inst, "master_play", "GO");
+        run_silence(api, inst, FRAMES * 16);
+
+        api->set_param(inst, "master_clear", "GO");
+        run_silence(api, inst, (long)(10.0 * SR));
+
+        api->set_param(inst, "master_clear", "GO");   /* changed my mind */
+        api->get_param(inst, "master_clear", buf, sizeof(buf));
+        check(strcmp(buf, "CLR") == 0, "test30: the button is idle again");
+
+        /* Well past where the wipe would have landed. */
+        run_silence(api, inst, (long)(10.0 * SR));
+        api->get_param(inst, "master_state", buf, sizeof(buf));
+        check(buf[0] == 'P',
+              "test30: the take survives and is still playing — a destructive\n"
+              "        control that cannot be called off is a trap, and this\n"
+              "        one sits between two that are pressed constantly");
+
+        int16_t blk[FRAMES * 2];
+        memset(blk, 0, sizeof(blk));
+        api->process_block(inst, blk, FRAMES);
+        int peak = 0;
+        for (int i = 0; i < FRAMES; i++) {
+            int v = blk[2 * i]; if (v < 0) v = -v;
+            if (v > peak) peak = v;
+        }
+        check(peak > 8000,
+              "test30: and it is back at full level, not stuck where the fade\n"
+              "        had got to");
 
         free(mat);
         api->destroy_instance(inst);

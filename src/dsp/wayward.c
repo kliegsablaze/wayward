@@ -17,7 +17,7 @@
  * PAGES (one ui_hierarchy level each; the host renders 8 knobs per page,
  * 4 across x 2 rows):
  *
- *   Main    PLAY  RSYN  ....  STATE /  BASE  SPRD  WIDEN SYNC
+ *   Main    PLAY  RSYN  CLEAR STATE /  BASE  SPRD  WIDEN SYNC
  *   Mix     1     2     3     4     /  5     6     DRY   OUT
  *   Loop 1  REC   TRIG  START END   /  BPM   BEAT  FIT   PHAS
  *   ...     (Loop 2..6 identical)
@@ -154,6 +154,19 @@
  * A whole detent lands in about 50 ms; the full half-cycle sweep takes a few
  * seconds, and audibly slides the loop into place while it happens. */
 #define PHASE_SLIDE_RATE 0.25
+
+/* CLEAR takes this long to arrive.
+ *
+ * The delay is the safety. CLEAR sits between two controls you reach for
+ * constantly, and it throws away every take on the module — but it announces
+ * itself by fading what is playing over a quarter of a minute, and a second
+ * press calls it off. A confirmation dialog would need a screen this module
+ * does not have; a long audible fade needs nothing and is impossible to
+ * miss.
+ *
+ * It is also the right musical shape: the last gesture of a piece is usually
+ * to let it go quiet. */
+#define CLEAR_SECONDS    15.0f
 
 typedef struct { int16_t l, r; } frame16_t;
 
@@ -298,6 +311,11 @@ typedef struct {
      * must never do. */
     int   prev_clock;
 
+    /* CLEAR in flight: the ensemble is fading toward being wiped. */
+    int   clearing;
+    float clear_gain;   /* 1 down to 0 across CLEAR_SECONDS */
+    float clear_step;   /* per frame, resolved once per block */
+
     uint64_t total_frames;
 } inst_t;
 
@@ -435,6 +453,45 @@ static void init_loop(loop_t *loop) {
     loop->od_last_idx     = -1;
 }
 
+/* Everything a loop is, except the buffer it owns. init_loop clears the
+ * pointer as well, which is right at construction and catastrophic here. */
+static void reset_loop_keep_buffer(loop_t *loop) {
+    frame16_t *buf = loop->buffer;
+    const int cap = loop->capacity_frames;
+    init_loop(loop);
+    loop->buffer = buf;
+    loop->capacity_frames = cap;
+}
+
+/* The end of a CLEAR: every take gone, every setting back to where it
+ * started.
+ *
+ * The audio buffers are deliberately NOT zeroed. Wiping 31.7 MB would take
+ * far longer than the 900 us this block has, and it buys nothing — a take
+ * with no recorded length cannot be reached, and the next recording
+ * overwrites from the beginning anyway. */
+static void wipe_all(inst_t *s) {
+    for (int i = 0; i < NUM_LOOPS; i++) {
+        reset_loop_keep_buffer(&s->loops[i]);
+        /* The prepass ran at the top of this block against the loop as it
+         * was. Clearing the span too stops the rest of the block reading
+         * through a window that no longer has a take behind it. */
+        s->loops[i].span = 0.0;
+    }
+    s->playing   = 0;
+    s->sync_mode = SYNC_FREE;
+    s->base_bpm  = DEFAULT_BPM;
+    s->spread    = DEFAULT_SPREAD;
+    s->dry       = 1.0f;
+    s->out       = 0.8f;
+    s->widen     = 0.5f;
+    s->prev_clock = MOVE_CLOCK_STATUS_UNAVAILABLE;
+    apply_spread(s);
+
+    s->clearing   = 0;
+    s->clear_gain = 1.0f;
+}
+
 /* ------------------------------------------------------------------ */
 /* Readouts                                                            */
 /* ------------------------------------------------------------------ */
@@ -477,6 +534,16 @@ static char loop_status_char(const inst_t *s, const loop_t *loop) {
 }
 
 static int master_state_text(const inst_t *s, char *buf, int len) {
+    /* A clear in flight displaces the ensemble: for those fifteen seconds
+     * the countdown is the only thing worth reading, and this is the one
+     * cell that can show it. "CLR" and the whole seconds remaining, with no
+     * separator between them, so the renderer either fits it on one line or
+     * splits it exactly as "CLR" over the number. */
+    if (s->clearing) {
+        int secs = (int)(s->clear_gain * CLEAR_SECONDS + 0.999f);
+        if (secs < 1) secs = 1;
+        return snprintf(buf, len, "CLR%d", secs);
+    }
     char code[NUM_LOOPS];
     for (int i = 0; i < NUM_LOOPS; i++) {
         code[i] = loop_status_char(s, &s->loops[i]);
@@ -576,6 +643,8 @@ static void *v2_create_instance(const char *dir, const char *cfg) {
     s->dry_cur   = s->dry;
     s->out_cur   = s->out;
     s->prev_clock = MOVE_CLOCK_STATUS_UNAVAILABLE;
+    s->clearing   = 0;
+    s->clear_gain = 1.0f;
 
     for (int i = 0; i < NUM_LOOPS; i++) {
         init_loop(&s->loops[i]);
@@ -738,6 +807,8 @@ static void v2_process_block(void *instance, int16_t *lr, int frames) {
         follow_host_clock(s);
     }
 
+    s->clear_step = 1.0f / (CLEAR_SECONDS * (float)SAMPLE_RATE);
+
     s->dry_cur += (s->dry - s->dry_cur) * GAIN_SLEW;
     s->out_cur += (s->out - s->out_cur) * GAIN_SLEW;
     for (int i = 0; i < NUM_LOOPS; i++) prepass(s, &s->loops[i], i);
@@ -892,6 +963,16 @@ static void v2_process_block(void *instance, int16_t *lr, int frames) {
             }
         }
 
+        /* The fade applies to the loops only. DRY is the live input, and
+         * ducking someone's playing for fifteen seconds to announce that
+         * their loops are going away would be the wrong thing to take. */
+        if (s->clearing) {
+            acc_l *= s->clear_gain;
+            acc_r *= s->clear_gain;
+            s->clear_gain -= s->clear_step;
+            if (s->clear_gain <= 0.0f) wipe_all(s);
+        }
+
         /* NOTHING TO ADD, NOTHING TO TOUCH.
          *
          * With no loop sounding and DRY at full, the block is left exactly
@@ -979,6 +1060,21 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
             /* Starting zeroes every phase at the same sample — that shared
              * moment is what the whole piece drifts away from. */
             if (s->playing) zero_all_phases(s);
+        }
+        return;
+    }
+    if (strcmp(key, "master_clear") == 0) {
+        /* Press to begin, press again to call it off. An abort has to exist:
+         * this control erases everything and sits between two that are
+         * pressed constantly. */
+        if (trigger_fired(val)) {
+            if (s->clearing) {
+                s->clearing   = 0;
+                s->clear_gain = 1.0f;
+            } else {
+                s->clearing   = 1;
+                s->clear_gain = 1.0f;
+            }
         }
         return;
     }
@@ -1083,6 +1179,8 @@ static int build_chain_params(char *buf, int len) {
           "\"options\":[\"-\"],\"access\":\"read\"}"
         ",{\"key\":\"master_resync\",\"name\":\"RSYN\",\"type\":\"enum\","
           "\"options\":%s,\"access\":\"write\"}"
+        ",{\"key\":\"master_clear\",\"name\":\"CLEAR\",\"type\":\"enum\","
+          "\"options\":%s,\"access\":\"write\"}"
         ",{\"key\":\"master_dry\",\"name\":\"DRY\",\"type\":\"float\","
           "\"min\":0,\"max\":1,\"default\":1,\"step\":0.01,\"unit\":\"%%\","
           "\"display_format\":\"%%.0f\"}"
@@ -1095,7 +1193,7 @@ static int build_chain_params(char *buf, int len) {
         TRIGGER_OPTIONS_JSON,
         (double)MIN_BPM, (double)MAX_BPM, (double)DEFAULT_BPM,
         (double)MIN_SPREAD, (double)MAX_SPREAD, (double)DEFAULT_SPREAD,
-        TRIGGER_OPTIONS_JSON);
+        TRIGGER_OPTIONS_JSON, TRIGGER_OPTIONS_JSON);
 
     /* The six mixer faders. The host's detectFader keys off the _volume
      * suffix — rename these and they become dials. */
@@ -1178,11 +1276,12 @@ static int build_ui_hierarchy(char *buf, int len) {
            * because they are read together (BASE is where the piece is, SPRD
            * is how fast it comes apart), then WIDEN, then SYNC — the least
            * touched control on the page, furthest from the hand. */
-          "\"knobs\":[\"master_play\",\"master_resync\",\"\",\"master_state\","
+          "\"knobs\":[\"master_play\",\"master_resync\",\"master_clear\",\"master_state\","
                      "\"master_base\",\"master_spread\",\"master_widen\",\"master_sync\"],"
           "\"params\":["
             "{\"key\":\"master_play\",\"label\":\"Play\"},"
             "{\"key\":\"master_resync\",\"label\":\"Resync\"},"
+            "{\"key\":\"master_clear\",\"label\":\"Clear\"},"
             "{\"key\":\"master_state\",\"label\":\"State\"},"
             "{\"key\":\"master_base\",\"label\":\"Base\"},"
             "{\"key\":\"master_spread\",\"label\":\"Spread\"},"
@@ -1238,6 +1337,10 @@ static int v2_get_param(void *instance, const char *key, char *buf, int len) {
     if (strcmp(key, "master_play") == 0)
         return snprintf(buf, len, s->playing ? "STOP" : "PLAY");
     if (strcmp(key, "master_resync") == 0) return snprintf(buf, len, "SYNC");
+    /* Names what the next press will do, as the other transport buttons do:
+     * once a clear is running, pressing again keeps everything. */
+    if (strcmp(key, "master_clear") == 0)
+        return snprintf(buf, len, s->clearing ? "KEEP" : "CLR");
     if (strcmp(key, "master_sync") == 0)
         return snprintf(buf, len, "%s", SYNC_LABELS[s->sync_mode]);
     if (strcmp(key, "master_base") == 0)   return snprintf(buf, len, "%.0f", (double)s->base_bpm);

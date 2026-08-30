@@ -95,16 +95,15 @@ are effectively capped at 5–6 by the cell width.
 ### Main
 
 ```
-PLAY   RSYN   ····   STATE
+PLAY   RSYN   CLEAR  STATE
 BASE   SPRD   WIDEN  SYNC
 ```
 
 Top row is the transport, bottom row the tuning. PLAY and RSYN are the two
 controls touched mid-performance, so they take the leftmost cells — the ones a
 hand finds without looking — with STATE at the end of the same row reporting
-on what they just did, and the blank cell between them keeping the momentary
-buttons clear of the readout. The bottom row is set once and left: BASE beside
-SPRD because they are read together, then WIDEN, then SYNC, the least-touched
+on what they just did. The bottom row is set once and left: BASE beside SPRD
+because they are read together, then WIDEN, then SYNC, the least-touched
 control on the page and the furthest from the hand.
 
 | key | type | |
@@ -116,7 +115,36 @@ control on the page and the furthest from the hand.
 | `master_state` | enum, `access:"read"` | Six characters, one per loop: `.` empty, `S` has a take but stopped, `P` playing, `O` overdubbing, `R` recording. This is where transport state actually lives — the glyphs are constrained by the renderer, not chosen for looks; see below. |
 | `master_resync` | trigger | Re-zeroes every phase *without* stopping — pull the ensemble back into unison mid-performance. |
 | `master_widen` | float 0–1, `unit:"%"` | A stereo *spread* control, not a position control. At 0 all six loops sit centred; turning it up fans them progressively across the stereo field. Six loops phasing in mono turn to mud; the same six spread across the image read as voices you can follow individually. Lives on Main because it shapes the ensemble, not the balance. |
-| `""` | | A load-bearing blank cell. |
+| `master_clear` | trigger | Erases every take and returns every setting to its default, over a 15-second fade. Reads `CLR`, then `KEEP` once running. See below. |
+
+### CLEAR
+
+Erases all six takes and resets every setting — but not at once. It fades the
+ensemble over **15 seconds** and wipes at the end.
+
+**The delay is the safety.** CLEAR sits between two controls that get pressed
+constantly and it throws away everything on the module. A confirmation dialog
+would need a screen this module does not have; a long audible fade needs
+nothing, is impossible to miss, and a second press calls it off — the button
+reads `KEEP` while a clear is in flight. It is also the right musical shape,
+since the last gesture of a piece is usually to let it go quiet.
+
+**The fade applies to the loops only, not to DRY.** Ducking someone's live
+playing for fifteen seconds to announce that their loops are going away would
+be taking the wrong thing.
+
+**STATE displaces its glyphs for the countdown** — `CLR` and the whole seconds
+remaining, with no separator, so the renderer either fits it on one line or
+splits it as `CLR` over the number. For those fifteen seconds the countdown is
+the only thing that cell could usefully say.
+
+**The audio buffers are not zeroed.** Wiping 31.7 MB would take far longer
+than the 900 µs the block has, and buys nothing: a take with no recorded
+length cannot be reached, and the next recording overwrites from the
+beginning. The wipe also clears each loop's resolved `span`, because the
+prepass ran at the top of the block against takes that still existed —
+without that, the rest of the block would read through a window with nothing
+behind it.
 
 ### Why the transport state is in STATE and not on the button
 
