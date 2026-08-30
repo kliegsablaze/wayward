@@ -20,8 +20,8 @@ the DSP architecture.
 
 > **Status: feature complete, unreleased.** Everything in the design is built
 > and tested — recording, windowing, the period counter, all six loops, the fit
-> modes, the mixer, and transport sync. It has not been through much playing
-> yet, and it is not in the Module Store.
+> modes and the mixer. It has not been through much playing yet, and it is not
+> in the Module Store.
 
 ## Installing
 

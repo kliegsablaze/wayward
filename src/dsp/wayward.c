@@ -17,7 +17,7 @@
  * PAGES (one ui_hierarchy level each; the host renders 8 knobs per page,
  * 4 across x 2 rows):
  *
- *   Main    PLAY  RSYN  CLEAR STATE /  BASE  SPRD  WIDEN SYNC
+ *   Main    PLAY  RSYN  CLEAR STATE /  BASE  SPRD  WIDEN ....
  *   Mix     1     2     3     4     /  5     6     DRY   OUT
  *   Loop 1  REC   TRIG  START END   /  BPM   BEAT  FIT   PHAS
  *   ...     (Loop 2..6 identical)
@@ -196,11 +196,6 @@ static const char *const FIT_LABELS[]  = {
 /* True for the companion modes — the odd indices. */
 #define FIT_IS_FADED(f) (((int)(f) & 1) != 0)
 
-static const char *const SYNC_LABELS[] = { "FREE", "MOVE" };
-#define SYNC_COUNT 2
-#define SYNC_FREE  0
-#define SYNC_MOVE  1
-
 /* Triggers: any write that is not the idle spelling fires them. */
 static const char *const TRIGGER_OPTIONS_JSON = "[\"-\",\"GO\"]";
 
@@ -296,7 +291,6 @@ typedef struct {
     loop_t loops[NUM_LOOPS];
 
     int   playing;
-    int   sync_mode;    /* index into SYNC_LABELS */
     float base_bpm;
     float spread;
     float dry;
@@ -304,12 +298,6 @@ typedef struct {
     float widen;
 
     float dry_cur, out_cur;   /* chased, as the per-loop gains are */
-
-    /* SYNC MOVE. The clock status last seen, so the transport is followed on
-     * its EDGES rather than its level — otherwise a running transport would
-     * re-zero every phase on every block, which is the one thing the piece
-     * must never do. */
-    int   prev_clock;
 
     /* CLEAR in flight: the ensemble is fading toward being wiped. */
     int   clearing;
@@ -370,60 +358,6 @@ static void zero_all_phases(inst_t *s) {
     for (int i = 0; i < NUM_LOOPS; i++) s->loops[i].pos = 0.0;
 }
 
-/* ------------------------------------------------------------------ */
-/* SYNC MOVE — the only part of this module that looks outside itself   */
-/* ------------------------------------------------------------------ */
-
-/* Take the host's tempo as BASE, and fan the six out from it as usual.
- *
- * Only when the rounded tempo has actually CHANGED, so that a per-loop BPM
- * set by hand survives until the song tempo moves. Re-applying every block
- * would make the loop pages read-only in MOVE, which is not what following a
- * tempo should mean. */
-static void follow_host_bpm(inst_t *s) {
-    if (!g_host || !g_host->get_bpm) return;
-    const float b = clampf(roundf(g_host->get_bpm()), MIN_BPM, MAX_BPM);
-    if (b != s->base_bpm) {
-        s->base_bpm = b;
-        apply_spread(s);
-    }
-}
-
-/* Follow the transport on its edges. UNAVAILABLE means no clock is
- * configured at all, which is not the same as a stopped one — it must not
- * stop an ensemble that is already running. */
-static void follow_host_clock(inst_t *s) {
-    if (!g_host || !g_host->get_clock_status) return;
-    const int cur = g_host->get_clock_status();
-    if (cur == s->prev_clock) return;
-
-    if (cur == MOVE_CLOCK_STATUS_RUNNING) {
-        s->playing = 1;
-        zero_all_phases(s);      /* the shared moment the piece drifts from */
-    } else if (cur == MOVE_CLOCK_STATUS_STOPPED
-               && s->prev_clock == MOVE_CLOCK_STATUS_RUNNING) {
-        s->playing = 0;
-    }
-    s->prev_clock = cur;
-}
-
-/* Switching INTO MOVE adopts whatever the host is doing right now, rather
- * than waiting for the next transport edge — otherwise turning the knob mid
- * song would appear to do nothing at all until the transport was cycled. */
-static void adopt_host(inst_t *s) {
-    if (!g_host) return;
-    follow_host_bpm(s);
-    s->prev_clock = g_host->get_clock_status
-                  ? g_host->get_clock_status()
-                  : MOVE_CLOCK_STATUS_UNAVAILABLE;
-    if (s->prev_clock == MOVE_CLOCK_STATUS_RUNNING) {
-        s->playing = 1;
-        zero_all_phases(s);
-    } else if (s->prev_clock == MOVE_CLOCK_STATUS_STOPPED) {
-        s->playing = 0;
-    }
-}
-
 static void init_loop(loop_t *loop) {
     loop->buffer          = NULL;
     loop->capacity_frames = 0;
@@ -479,13 +413,11 @@ static void wipe_all(inst_t *s) {
         s->loops[i].span = 0.0;
     }
     s->playing   = 0;
-    s->sync_mode = SYNC_FREE;
     s->base_bpm  = DEFAULT_BPM;
     s->spread    = DEFAULT_SPREAD;
     s->dry       = 1.0f;
     s->out       = 0.8f;
     s->widen     = 0.5f;
-    s->prev_clock = MOVE_CLOCK_STATUS_UNAVAILABLE;
     apply_spread(s);
 
     s->clearing   = 0;
@@ -634,7 +566,6 @@ static void *v2_create_instance(const char *dir, const char *cfg) {
     if (!s) return NULL;
 
     s->playing   = 0;
-    s->sync_mode = SYNC_FREE;
     s->base_bpm  = DEFAULT_BPM;
     s->spread    = DEFAULT_SPREAD;  /* 100..105 out of the box */
     s->dry       = 1.0f;            /* an fx that silences its input is a bug */
@@ -642,7 +573,6 @@ static void *v2_create_instance(const char *dir, const char *cfg) {
     s->widen     = 0.5f;
     s->dry_cur   = s->dry;
     s->out_cur   = s->out;
-    s->prev_clock = MOVE_CLOCK_STATUS_UNAVAILABLE;
     s->clearing   = 0;
     s->clear_gain = 1.0f;
 
@@ -801,11 +731,6 @@ static void prepass(inst_t *s, loop_t *lp, int index) {
 static void v2_process_block(void *instance, int16_t *lr, int frames) {
     inst_t *s = (inst_t *)instance;
     if (!s || !lr || frames <= 0) return;
-
-    if (s->sync_mode == SYNC_MOVE) {
-        follow_host_bpm(s);
-        follow_host_clock(s);
-    }
 
     s->clear_step = 1.0f / (CLEAR_SECONDS * (float)SAMPLE_RATE);
 
@@ -1083,13 +1008,6 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
         if (trigger_fired(val)) zero_all_phases(s);
         return;
     }
-    if (strcmp(key, "master_sync") == 0) {
-        const int before = s->sync_mode;
-        s->sync_mode = enum_index_from(val, SYNC_LABELS, SYNC_COUNT,
-                                       s->sync_mode);
-        if (s->sync_mode == SYNC_MOVE && before != SYNC_MOVE) adopt_host(s);
-        return;
-    }
     if (strcmp(key, "master_base") == 0) {
         s->base_bpm = clampf(roundf((float)atof(val)), MIN_BPM, MAX_BPM);
         apply_spread(s);
@@ -1164,8 +1082,6 @@ static int build_chain_params(char *buf, int len) {
         "["
         "{\"key\":\"master_play\",\"name\":\"PLAY\",\"type\":\"enum\","
           "\"options\":%s,\"access\":\"write\"}"
-        ",{\"key\":\"master_sync\",\"name\":\"SYNC\",\"type\":\"enum\","
-          "\"options\":[\"FREE\",\"MOVE\"],\"default\":0}"
         ",{\"key\":\"master_base\",\"name\":\"BASE\",\"type\":\"float\","
           "\"min\":%.0f,\"max\":%.0f,\"default\":%.0f,\"step\":1,"
           "\"display_format\":\"%%.0f\"}"
@@ -1274,10 +1190,12 @@ static int build_ui_hierarchy(char *buf, int len) {
            *
            * The bottom row is set once and left: BASE and SPRD adjacent
            * because they are read together (BASE is where the piece is, SPRD
-           * is how fast it comes apart), then WIDEN, then SYNC — the least
-           * touched control on the page, furthest from the hand. */
+           * is how fast it comes apart), then WIDEN. The last cell is a
+           * load-bearing blank: "" is passed through by keyOf, and both the
+           * renderer and the knob handlers treat a falsy key as "nothing
+           * here" — true blank grid space, and a no-op if it is turned. */
           "\"knobs\":[\"master_play\",\"master_resync\",\"master_clear\",\"master_state\","
-                     "\"master_base\",\"master_spread\",\"master_widen\",\"master_sync\"],"
+                     "\"master_base\",\"master_spread\",\"master_widen\",\"\"],"
           "\"params\":["
             "{\"key\":\"master_play\",\"label\":\"Play\"},"
             "{\"key\":\"master_resync\",\"label\":\"Resync\"},"
@@ -1286,7 +1204,6 @@ static int build_ui_hierarchy(char *buf, int len) {
             "{\"key\":\"master_base\",\"label\":\"Base\"},"
             "{\"key\":\"master_spread\",\"label\":\"Spread\"},"
             "{\"key\":\"master_widen\",\"label\":\"Widen\"},"
-            "{\"key\":\"master_sync\",\"label\":\"Sync\"},"
             "{\"level\":\"mix\",\"label\":\"Mix\"},"
             "{\"level\":\"loop1\",\"label\":\"Loop 1\"},"
             "{\"level\":\"loop2\",\"label\":\"Loop 2\"},"
@@ -1341,8 +1258,6 @@ static int v2_get_param(void *instance, const char *key, char *buf, int len) {
      * once a clear is running, pressing again keeps everything. */
     if (strcmp(key, "master_clear") == 0)
         return snprintf(buf, len, s->clearing ? "KEEP" : "CLR");
-    if (strcmp(key, "master_sync") == 0)
-        return snprintf(buf, len, "%s", SYNC_LABELS[s->sync_mode]);
     if (strcmp(key, "master_base") == 0)   return snprintf(buf, len, "%.0f", (double)s->base_bpm);
     if (strcmp(key, "master_spread") == 0) return snprintf(buf, len, "%.0f", (double)s->spread);
     if (strcmp(key, "master_state") == 0)  return master_state_text(s, buf, len);
@@ -1361,10 +1276,11 @@ static int v2_get_param(void *instance, const char *key, char *buf, int len) {
 /* ------------------------------------------------------------------ */
 
 audio_fx_api_v2_t *move_audio_fx_init_v2(const host_api_v1_t *host) {
-    /* SYNC MOVE reaches for get_bpm and get_clock_status through this. Both
-     * are documented as nullable on older hosts, and `host` itself is NULL
-     * under the bench tests, so every use is guarded. */
+    /* Kept, but nothing reads it: this module is entirely self-contained.
+     * It followed the host transport and tempo for a while; that was taken
+     * out deliberately, not lost. */
     g_host = host;
+    (void)g_host;
 
     memset(&g_api, 0, sizeof(g_api));
     g_api.api_version      = AUDIO_FX_API_VERSION_2;

@@ -96,24 +96,25 @@ are effectively capped at 5–6 by the cell width.
 
 ```
 PLAY   RSYN   CLEAR  STATE
-BASE   SPRD   WIDEN  SYNC
+BASE   SPRD   WIDEN  ····
 ```
 
 Top row is the transport, bottom row the tuning. PLAY and RSYN are the two
 controls touched mid-performance, so they take the leftmost cells — the ones a
 hand finds without looking — with STATE at the end of the same row reporting
 on what they just did. The bottom row is set once and left: BASE beside SPRD
-because they are read together, then WIDEN, then SYNC, the least-touched
-control on the page and the furthest from the hand.
+because they are read together, then WIDEN, then a blank cell — left by the
+removal of SYNC, and worth keeping blank rather than filling for the sake of
+it.
 
 | key | type | |
 |---|---|---|
 | `master_play` | trigger | Zeroes all six phases at the same frame and runs. That shared moment is what the whole piece drifts away from. Reads `PLAY` / `STOP` — the button names what the *next* press will do, though **only in the header while the knob is held**: see the note below. |
-| `master_sync` | enum `FREE`/`MOVE` | `FREE` ignores the outside world entirely. `MOVE` starts and stops with the host transport and takes its tempo as BASE — see below. |
 | `master_base` | float 40–200, step 1 | Reference tempo. |
 | `master_spread` | float −12…+12, step 1 | Loop *i* runs at `base + i × spread`. **0 locks all six in unison**; the return to 0 is the piece's largest gesture. Writes the six per-loop tempi, which stay individually editable afterwards. |
 | `master_state` | enum, `access:"read"` | Six characters, one per loop: `.` empty, `S` has a take but stopped, `P` playing, `O` overdubbing, `R` recording. This is where transport state actually lives — the glyphs are constrained by the renderer, not chosen for looks; see below. |
 | `master_resync` | trigger | Re-zeroes every phase *without* stopping — pull the ensemble back into unison mid-performance. |
+| `""` | | A load-bearing blank cell. |
 | `master_widen` | float 0–1, `unit:"%"` | A stereo *spread* control, not a position control. At 0 all six loops sit centred; turning it up fans them progressively across the stereo field. Six loops phasing in mono turn to mud; the same six spread across the image read as voices you can follow individually. Lives on Main because it shapes the ensemble, not the balance. |
 | `master_clear` | trigger | Erases every take and returns every setting to its default, over a 15-second fade. Reads `CLR`, then `KEEP` once running. See below. |
 
@@ -255,29 +256,6 @@ failed for the wrong reason: the fade-out corner at the window's end is itself
 a slope change of ~91 per frame, which the metric flagged whether or not PHASE
 moved at all.
 
-### SYNC MOVE
-
-The only part of the module that looks outside itself, via `get_bpm()` and
-`get_clock_status()` (`plugin_api_v1.h:146,156`). Both are documented as
-nullable on older hosts and every use is guarded.
-
-**The transport is followed on its edges, not its level.** A running transport
-that re-triggered on every block would re-zero all six phases 344 times a
-second, which would make the piece incapable of drifting at all — the one
-thing it exists to do. Only a transition into `RUNNING` starts the ensemble
-and zeroes the phases; only `RUNNING → STOPPED` stops it.
-
-**`UNAVAILABLE` is not `STOPPED`.** It means no clock is configured, so it
-must never silence an ensemble that is already running.
-
-**BASE is re-applied only when the host tempo actually changes.** Re-fanning
-the six on every block would overwrite any loop whose BPM you set by hand,
-making the loop pages effectively read-only in MOVE. Following a tempo should
-not mean that.
-
-**Switching into MOVE adopts the host's current state at once** rather than
-waiting for the next transport edge, which might not come for a whole song.
-
 ### Leading silence is trimmed on close
 
 A take almost always opens with the moment between pressing REC and actually
@@ -391,9 +369,14 @@ audio. Same trade Forgetful makes.
 4. ~~Six loops, the SPREAD macro, RSYN, the STATE readout.~~ **done**
 5. ~~SPD and RPT fit modes and their faded companions, PHASE, the Mix
    page.~~ **done**
-6. ~~`SYNC MOVE` against the host transport.~~ **done**
+6. ~~`SYNC MOVE` against the host transport.~~ **built, then removed.** The
+   module followed the Move's transport and tempo for one version. It was
+   taken out deliberately: Wayward's loops keep their own time by definition,
+   and a control that locks them to somebody else's is at odds with the
+   instrument. The host API for it is `get_bpm()` and `get_clock_status()`
+   (`plugin_api_v1.h:146,156`) if it is ever wanted back.
 
-The build order is complete.
+The build order is complete, and the module reads nothing outside itself.
 
 Also unbuilt, in rough order of how much they would add: a per-loop readout of
 where in its cycle each loop currently sits (there is no free cell on a loop
