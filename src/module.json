@@ -1,0 +1,17 @@
+{
+  "id": "wayward",
+  "name": "Wayward",
+  "abbrev": "WAYW",
+  "version": "0.1.0",
+  "dsp": "wayward.so",
+  "api_version": 2,
+  "component_type": "audio_fx",
+  "description": "Six loops, each keeping its own time.",
+  "capabilities": {
+    "audio_in": true,
+    "audio_out": true,
+    "chainable": true,
+    "component_type": "audio_fx",
+    "requires_continuous_processing": true
+  }
+}
