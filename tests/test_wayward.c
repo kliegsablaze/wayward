@@ -23,7 +23,7 @@
 extern audio_fx_api_v2_t *move_audio_fx_init_v2(const host_api_v1_t *host);
 
 #define TEST_NUM_LOOPS   6
-#define TEST_PARAM_COUNT 69
+#define TEST_PARAM_COUNT 70
 #define FRAMES 128
 #define SR     44100L
 
@@ -138,8 +138,8 @@ int main(void) {
 
         int keys = count_occurrences(buf, "\"key\":");
         check(keys == TEST_PARAM_COUNT,
-              "test0: chain_params has exactly 69 entries — 9 master, and per\n"
-              "       loop a fader, a cycle readout, and the 7 on its own page");
+              "test0: chain_params has exactly 70 entries — 9 master, the loop\n"
+              "       selector, and per loop a fader, a cycle readout and 7 more");
 
         /* snprintf truncates SILENTLY and a module that overflows its JSON
          * buffer simply stops having a UI. Fail while there is still room. */
@@ -179,6 +179,12 @@ int main(void) {
                   "test1: every master key appears in ui_hierarchy");
         }
 
+        /* THE SIX LOOP PAGES ARE NOW ONE CHILD LEVEL.
+         *
+         * The concrete per-loop keys must still be DECLARED — the host
+         * resolves the level's generic keys onto them through the template,
+         * and modulation still addresses them — but they are deliberately
+         * absent from ui_hierarchy, which lists the generic form once. */
         const char *suffixes[] = { "record", "trig", "start", "end",
                                    "bpm", "beats", "fit", "phase", "volume",
                                    "cycle" };
@@ -186,18 +192,56 @@ int main(void) {
             for (size_t i = 0; i < sizeof(suffixes) / sizeof(suffixes[0]); i++) {
                 char probe[64];
                 snprintf(probe, sizeof(probe), "\"loop%d_%s\"", L, suffixes[i]);
-                check(strstr(ui, probe) != NULL,
-                      "test1: every per-loop key appears in ui_hierarchy");
+                check(strstr(buf, probe) != NULL,
+                      "test1: every concrete per-loop key is still declared in\n"
+                      "       chain_params, which is what the child level's\n"
+                      "       generic keys resolve onto");
             }
         }
 
-        /* Ten levels: root, Orbits, Shape, Mix, and one per loop. */
-        check(count_occurrences(ui, "\"knobs\":") == 10,
-              "test1: exactly ten pages are declared");
-        check(count_occurrences(ui, "\"level\":") == 9,
-              "test1: root carries nine nav entries — Orbits, Shape, Mix and\n"
-              "       the six loop pages");
-        /* One deliberate blank cell on Main. */
+        const char *generic[] = { "trig", "start", "end",
+                                  "bpm", "beats", "fit", "phase" };
+        for (size_t i = 0; i < sizeof(generic) / sizeof(generic[0]); i++) {
+            char probe[64];
+            snprintf(probe, sizeof(probe), "\"%s\"", generic[i]);
+            check(strstr(ui, probe) != NULL,
+                  "test1: the Loop page lists its keys in generic form");
+        }
+        check(strstr(ui, "\"loop1_start\"") == NULL,
+              "test1: and NOT in concrete form — listing both would give the\n"
+              "       planner two cells for one control");
+
+        check(strstr(ui, "\"child_key_template\":\"loop{index}_{key}\"") != NULL,
+              "test1: the template matches the keys the module already had, so\n"
+              "       nothing had to be renamed to adopt the child level");
+        check(strstr(ui, "\"child_index_base\":1") != NULL,
+              "test1: loops are numbered from 1, as their keys are");
+        check(strstr(ui, "\"child_count\":6") != NULL,
+              "test1: six instances");
+        check(strstr(ui, "\"child_index_param\":\"loop_select\"") != NULL,
+              "test1: the module owns the selection; the host polls this key\n"
+              "       every tick and follows it");
+        check(strstr(ui, "\"child_key_overrides\":{\"loop_select\":\"loop_select\"}") != NULL,
+              "test1: the selector maps to ITSELF. Without the override every\n"
+              "       key on a child page runs through the template, which\n"
+              "       would turn loop_select into loop1_loop_select");
+        check(strstr(ui, "\"knobs\":[\"loop_select\",\"trig\"") != NULL,
+              "test1: the selector takes the first cell, and listing it here\n"
+              "       also suppresses the separate picker page the planner\n"
+              "       would otherwise generate");
+
+        /* Five levels: root, Orbits, Shape, Mix and the one Loop level. */
+        check(count_occurrences(ui, "\"knobs\":") == 5,
+              "test1: ten pages have become five");
+        check(count_occurrences(ui, "\"level\":") == 4,
+              "test1: root carries four nav entries — Orbits, Shape, Mix, Loop");
+
+        check(strstr(ui, "\"loop3_record\",\"master_play\"") != NULL,
+              "test1: Main puts the six RECs in a 3x2 block with the transport\n"
+              "       in the right-hand column");
+        check(strstr(ui, "\"master_align\",\"\",\"loop4_cycle\"") != NULL,
+              "test1: Orbits puts ALIGN at the end of the top row, with the\n"
+              "       second row's first cell blank");
         check(strstr(ui, "\"\",\"master_clear\"") != NULL,
               "test1: CLEAR sits in Shape's far corner, the cell furthest from\n"
               "       anything reached in a hurry");
@@ -207,8 +251,6 @@ int main(void) {
         check(strstr(ui, "\"master_align\",\"\",\"loop4_cycle\"") != NULL,
               "test1: Orbits puts ALIGN at the end of the top row, with the\n"
               "       second row's first cell blank");
-        check(strstr(ui, "\"loop1_trig\",\"loop1_start\"") != NULL,
-              "test1: a loop page now opens on TRIG, REC having moved to Main");
 
         api->destroy_instance(inst);
     }
@@ -1230,6 +1272,44 @@ int main(void) {
         api->set_param(inst, "loop1_volume", "5");
         api->get_param(inst, "loop1_volume", buf, sizeof(buf));
         check(strcmp(buf, "2.000") == 0, "test32: and clamps there");
+        api->destroy_instance(inst);
+    }
+
+
+    /* ---- test 33: the loop selector ------------------------------------ */
+    {
+        void *inst = api->create_instance(NULL, NULL);
+
+        api->get_param(inst, "loop_select", buf, sizeof(buf));
+        check(strcmp(buf, "1") == 0, "test33: the Loop page opens on loop 1");
+
+        api->set_param(inst, "loop_select", "4");
+        api->get_param(inst, "loop_select", buf, sizeof(buf));
+        check(strcmp(buf, "4") == 0, "test33: and follows the knob");
+
+        /* A bare number, because the host parses it numerically and treats
+         * anything else as "do not move the focus" — which would leave the
+         * page editing whichever loop it was already on. */
+        for (const char *c = buf; *c; c++)
+            check(*c >= '0' && *c <= '9',
+                  "test33: the selector reads as a plain number");
+
+        api->set_param(inst, "loop_select", "0");
+        api->get_param(inst, "loop_select", buf, sizeof(buf));
+        check(strcmp(buf, "1") == 0, "test33: it clamps at the first loop");
+        api->set_param(inst, "loop_select", "99");
+        api->get_param(inst, "loop_select", buf, sizeof(buf));
+        check(strcmp(buf, "6") == 0, "test33: and at the last");
+
+        /* Selecting a loop must not touch it. The host re-keys the page's
+         * cells; the module's job is to leave the audio alone. */
+        api->set_param(inst, "loop2_bpm", "137");
+        api->set_param(inst, "loop_select", "5");
+        api->set_param(inst, "loop_select", "2");
+        api->get_param(inst, "loop2_bpm", buf, sizeof(buf));
+        check(strcmp(buf, "137") == 0,
+              "test33: moving the selection changes no loop's settings");
+
         api->destroy_instance(inst);
     }
 

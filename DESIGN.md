@@ -88,7 +88,7 @@ practice they never all line up again, which is the intended behaviour.
 
 ## Control surface
 
-Ten pages, one `ui_hierarchy` level each. Eight knobs per page, 4 across ×
+Five pages, one `ui_hierarchy` level each. Eight knobs per page, 4 across ×
 2 rows. Labels are capped at 5 characters by the host's `LABEL_CHARS`; values
 are effectively capped at 5–6 by the cell width.
 
@@ -203,27 +203,85 @@ comfortably inside the travel. Six quiet takes summed can need lifting, and a
 loop pushed past unity into the soft clipper is a usable sound rather than an
 accident.
 
-### Loop 1 … Loop 6
+### Loop — one page for all six
 
 ```
-TRIG   START  END    ····
+LOOP   TRIG   START  END
 BPM    BEAT   FIT    PHAS
 ```
 
-Top row is the take: hear it, and bound it. Bottom row is the time it keeps:
-how fast, how long, how the window meets the period, and where in the cycle it
-sits. REC lives on Main with the other five, so the top row ends on a blank
-cell.
+`LOOP` chooses which loop the other seven controls are editing. Top row is the
+take — which one, hear it, bound it. Bottom row is the time it keeps: how
+fast, how long, how the window meets the period, where in the cycle it sits.
+
+This is a **child level**, which is host machinery rather than anything the
+module fakes. The level declares the shape once and the host multiplies it:
+
+```json
+"loops": {
+  "child_count": 6,
+  "child_label": "Loop",
+  "child_key_template": "loop{index}_{key}",
+  "child_index_base": 1,
+  "child_index_param": "loop_select",
+  "child_key_overrides": { "loop_select": "loop_select" },
+  "knobs": ["loop_select", "trig", "start", "end",
+            "bpm", "beats", "fit", "phase"]
+}
+```
+
+The generic keys resolve through the template to `loop3_start` and so on, so
+**all 42 concrete parameters stay declared exactly as they were** and remain
+addressable by LFOs and modulation. Nothing had to be renamed: `loop{index}_{key}`
+with base 1 is the scheme the module already used. Six near-identical pages
+became one, and the bank bar lost six of its ten segments.
+
+**The host owns the hard part.** On a change of instance it drops the cached
+values, the knob state and any *pending write* for the page's cells
+(`page_controller.mjs`, `dropChildLevelCache`) — the pending write being the
+dangerous one, since it would otherwise land on the loop you just moved to. It
+also re-points each generic key at the concrete declaration, without which the
+metadata falls back to a guess and a specialised widget degrades into a bare
+0–1 knob.
+
+**Two details put the selector in cell one**, rather than on the separate
+picker page the planner would otherwise generate:
+
+- Listing `child_index_param` anywhere in the hierarchy suppresses that page —
+  *"no picker at all when the module offers a real cell for it"*
+  (`page_plan.mjs`, `childPickerNeeded`).
+- `child_key_overrides` maps `loop_select` to **itself**. Every key on a child
+  page is otherwise run through the template, which would turn `loop_select`
+  into `loop1_loop_select`; an override containing neither `{index}` nor
+  `{key}` resolves literally and escapes it.
+
+The host then polls `loop_select` every tick and follows it
+(`syncChildIndexFromModule`), so the selection is the module's to own. It is
+declared as a float 1–6, not an enum of `"1"`…`"6"`: the host parses it
+numerically and treats anything else as "do not move the focus", and numeric
+enum labels are ambiguous on this wire regardless. The label is `LOOP` rather
+than `SELECT` because `LABEL_CHARS` caps a label at five.
+
+**What it costs:** you can no longer compare two loops' settings side by side.
+Orbits covers most of that, since it shows where all six are at once.
 
 | key | type | |
 |---|---|---|
+| `loop_select` | float 1–6, step 1 | Which loop the page is editing. |
 | `loopN_trig` | trigger | One-shot audition of the window, ignoring the period. |
 | `loopN_start` | float 0–1, `unit:"%"` | Where the window begins in the take. |
-| `loopN_end` | float −1…+1, `unit:"%"` | **A bipolar length measured from START, not a second position.** Centre is a zero-length window; the top half grows the window forward from START until it reaches the end of the take; the bottom half grows it *backward* from START, played in **reverse**, reaching the head of the take at the extreme. The two halves are mirror images about a silent centre, and the reverse half reaches material the forward half never can. Because END is a length, there is no ordering to enforce and no way to set an inside-out window. The span is still resolved **per block, not in `set_param`**, so a knob never snaps back under the hand. |
+| `loopN_end` | float −1…+1, `unit:"%"` | **A bipolar length measured from START, not a second position.** Centre is a zero-length window; the top half grows it forward from START to the end of the take; the bottom half grows it *backward* from START, played in **reverse**, reaching the head of the take at the extreme. The two halves are mirror images about a silent centre, and the reverse half reaches material the forward half never can. Because END is a length there is no ordering to enforce and no inside-out window to guard against. Resolved **per block, not in `set_param`**, so a knob never snaps back under the hand. |
 | `loopN_bpm` | float 40–200, step 1 | This loop's tempo. |
 | `loopN_beats` | float 1–16, step 1 | `period = beats × 60/bpm`. Default 4 — at 100 BPM a 2.4 s loop, long enough to hear as a phrase rather than a flutter. |
-| `loopN_fit` | enum `PAD`/`SPEED`/`RPT` | Below. |
-| `loopN_phase` | float −0.5…+0.5 | Offsets this loop within its own cycle: slide it against the others by hand instead of waiting for it to drift. **Rate-limited per frame**, so the loop runs up to 25% fast or slow until it arrives rather than jumping — see below. |
+| `loopN_fit` | enum, 6 modes | Below. |
+| `loopN_phase` | float −0.5…+0.5 | Offsets this loop within its own cycle. **Rate-limited per frame** — see below. |
+
+**BEAT is a float, not an enum**, though the design began with an enum of
+`1,2,3,4,6,8,12,16`. The host learns from `get_param` whether to send enum
+labels or indices, so an enum whose labels are bare numbers is ambiguous on
+the wire — `"2"` is both the label `2` and the index 2. Free integers also
+turned out more musical: 7 beats against 8 phases beautifully, and the
+restricted set would have forbidden it.
 
 ### CLEAR
 

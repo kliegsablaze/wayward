@@ -14,15 +14,15 @@
  * neither one touches the recording. Six of those, at tempi a beat or two
  * apart, is the whole instrument.
  *
- * PAGES (one ui_hierarchy level each; the host renders 8 knobs per page,
- * 4 across x 2 rows):
+ * PAGES (the host renders 8 knobs per page, 4 across x 2 rows; the six loop
+ * pages are one CHILD LEVEL that the host multiplies):
  *
  *   Main    REC 1 REC 2 REC 3 PLAY  /  REC 4 REC 5 REC 6 RSYN
  *   Orbits  1     2     3     ALIGN /  ....  4     5     6
  *   Shape   BASE  SPRD  WIDEN ....  /  DRY   OUT   ....  CLEAR
  *   Mix     1     2     3     ....  /  4     5     6     ....
- *   Loop 1  TRIG  START END   ....  /  BPM   BEAT  FIT   PHAS
- *   ...     (Loop 2..6 identical)
+ *   Loop    LOOP  TRIG  START END   /  BPM   BEAT  FIT   PHAS
+ *           (one page for all six; LOOP chooses which)
  *
  * Eight sections is one more than Forgetful ships. drawBankBar handles any
  * page count up to the display width and the planner caps levels nowhere,
@@ -301,6 +301,12 @@ typedef struct {
 
     float dry_cur, out_cur;   /* chased, as the per-loop gains are */
 
+    /* Which loop the consolidated Loop page is editing, 1..6. The module
+     * barely uses it — every control on that page addresses a concrete
+     * loopN_ key — but the HOST reads it every tick to decide which loop the
+     * page's generic keys resolve to. */
+    int   loop_select;
+
     /* Frames since every phase was last zeroed together — the instant the
      * realignment countdown measures from. */
     uint64_t align_frames;
@@ -467,8 +473,9 @@ static void wipe_all(inst_t *s) {
     s->widen     = 0.5f;
     apply_spread(s);
 
-    s->clearing   = 0;
-    s->clear_gain = 1.0f;
+    s->clearing    = 0;
+    s->clear_gain  = 1.0f;
+    s->loop_select = 1;
 }
 
 /* ------------------------------------------------------------------ */
@@ -632,6 +639,7 @@ static void *v2_create_instance(const char *dir, const char *cfg) {
     s->out_cur   = s->out;
     s->clearing   = 0;
     s->clear_gain = 1.0f;
+    s->loop_select = 1;
 
     for (int i = 0; i < NUM_LOOPS; i++) {
         init_loop(&s->loops[i]);
@@ -1086,6 +1094,13 @@ static void v2_set_param(void *instance, const char *key, const char *val) {
         s->out = clampf((float)atof(val), 0.0f, 1.0f);
         return;
     }
+    if (strcmp(key, "loop_select") == 0) {
+        int v = atoi(val);
+        if (v < 1) v = 1;
+        if (v > NUM_LOOPS) v = NUM_LOOPS;
+        s->loop_select = v;
+        return;
+    }
     if (strcmp(key, "master_widen") == 0) {
         s->widen = clampf((float)atof(val), 0.0f, 1.0f);
         return;
@@ -1183,6 +1198,15 @@ static int build_chain_params(char *buf, int len) {
             i + 1, i + 1);
     }
 
+    /* The Loop page's instance selector. Declared as a float rather than an
+     * enum of "1".."6": the host reads it with a numeric parse, and numeric
+     * enum labels are ambiguous on this wire anyway. Named LOOP, not SELECT,
+     * because LABEL_CHARS caps a label at five. */
+    pos += snprintf(json + pos, sizeof(json) - pos,
+        ",{\"key\":\"loop_select\",\"name\":\"LOOP\",\"type\":\"float\","
+          "\"min\":1,\"max\":%d,\"default\":1,\"step\":1,"
+          "\"display_format\":\"%%.0f\"}", NUM_LOOPS);
+
     /* One cycle readout per loop, for the Orbits page. */
     for (int i = 0; i < NUM_LOOPS; i++) {
         pos += snprintf(json + pos, sizeof(json) - pos,
@@ -1270,12 +1294,7 @@ static int build_ui_hierarchy(char *buf, int len) {
             "{\"level\":\"orbits\",\"label\":\"Orbits\"},"
             "{\"level\":\"shape\",\"label\":\"Shape\"},"
             "{\"level\":\"mix\",\"label\":\"Mix\"},"
-            "{\"level\":\"loop1\",\"label\":\"Loop 1\"},"
-            "{\"level\":\"loop2\",\"label\":\"Loop 2\"},"
-            "{\"level\":\"loop3\",\"label\":\"Loop 3\"},"
-            "{\"level\":\"loop4\",\"label\":\"Loop 4\"},"
-            "{\"level\":\"loop5\",\"label\":\"Loop 5\"},"
-            "{\"level\":\"loop6\",\"label\":\"Loop 6\"}]}"
+            "{\"level\":\"loops\",\"label\":\"Loop\"}]}"
         /* ORBITS: where each loop is in its own cycle, and when they next
          * all meet. The six sit in the same 3x2 block as everywhere else,
          * and ALIGN takes the cell at the end of the top row — the one place
@@ -1294,23 +1313,48 @@ static int build_ui_hierarchy(char *buf, int len) {
           "\"loop1_volume\",\"loop2_volume\",\"loop3_volume\",\"\","
           "\"loop4_volume\",\"loop5_volume\",\"loop6_volume\",\"\"]}");
 
-    /* One level PER LOOP, so each is its own named section. Merging them
-     * into a single "loops" level would make the six one section, but the
-     * planner numbers a level's continuation pages, so they would read
-     * "Loops - 2".."Loops - 6" and stop saying which loop you were on. */
-    for (int i = 0; i < NUM_LOOPS; i++) {
-        int n = i + 1;
-        pos += snprintf(json + pos, sizeof(json) - pos,
-            ",\"loop%d\":{\"label\":\"Loop %d\",\"knobs\":["
-              /* Top row is the take: capture it, hear it, bound it.
-               * Bottom row is the time it keeps: how fast, how long, how the
-               * window meets the period, and where in the cycle it sits. */
-              /* REC moved to Main, so the take's controls shift left and the
-               * top row ends on a blank cell. */
-              "\"loop%d_trig\",\"loop%d_start\",\"loop%d_end\",\"\","
-              "\"loop%d_bpm\",\"loop%d_beats\",\"loop%d_fit\",\"loop%d_phase\"]}",
-            n, n, n, n, n, n, n, n, n);
-    }
+    /* ONE LEVEL FOR ALL SIX LOOPS — a child level, which is host machinery
+     * rather than anything this module has to fake.
+     *
+     * The level declares the shape once and the host multiplies it: the
+     * generic keys below resolve through child_key_template to loop3_start
+     * and so on, so all 42 concrete params stay declared exactly as they
+     * were and remain addressable by LFOs and modulation. Six near-identical
+     * pages become one, and the bank bar loses six of its ten segments.
+     *
+     * The host owns the hard part. On a change of instance it drops the
+     * cached values, the knob state and any PENDING WRITE for the page's
+     * cells (page_controller.mjs, dropChildLevelCache) — the pending write
+     * being the dangerous one, since it would otherwise land on the loop you
+     * just moved to. It also re-points each generic key at the concrete
+     * declaration, without which the metadata falls back to a guess and a
+     * specialised widget degrades into a bare 0..1 knob.
+     *
+     * TWO DETAILS PUT THE SELECTOR IN CELL ONE, rather than on the separate
+     * picker page the host would otherwise generate:
+     *
+     *   - Listing child_index_param anywhere in the hierarchy suppresses that
+     *     generated page ("no picker at all when the module offers a real
+     *     cell for it" — page_plan.mjs, childPickerNeeded).
+     *
+     *   - child_key_overrides maps loop_select to ITSELF. Every key on a
+     *     child page is otherwise run through the template, which would turn
+     *     loop_select into loop1_loop_select; an override containing neither
+     *     {index} nor {key} resolves literally and escapes that.
+     *
+     * The host then polls loop_select every tick and follows it
+     * (syncChildIndexFromModule), so the selection is the module's to own. */
+    pos += snprintf(json + pos, sizeof(json) - pos,
+        ",\"loops\":{\"label\":\"Loop\","
+          "\"child_count\":%d,\"child_label\":\"Loop\","
+          "\"child_key_template\":\"loop{index}_{key}\","
+          "\"child_index_base\":1,"
+          "\"child_index_param\":\"loop_select\","
+          "\"child_key_overrides\":{\"loop_select\":\"loop_select\"},"
+          /* Which loop, then the take, then the time it keeps. */
+          "\"knobs\":[\"loop_select\",\"trig\",\"start\",\"end\","
+                     "\"bpm\",\"beats\",\"fit\",\"phase\"]}",
+        NUM_LOOPS);
 
     pos += snprintf(json + pos, sizeof(json) - pos, "}}");
     return snprintf(buf, len, "%s", json);
@@ -1343,6 +1387,9 @@ static int v2_get_param(void *instance, const char *key, char *buf, int len) {
     if (strcmp(key, "master_out") == 0)    return snprintf(buf, len, "%.3f", (double)s->out);
     if (strcmp(key, "master_widen") == 0)  return snprintf(buf, len, "%.3f", (double)s->widen);
     if (strcmp(key, "master_align") == 0)  return master_align_text(s, buf, len);
+    /* A plain number, never an enum: the host parses this numerically and
+     * treats anything else as "do not move the focus". */
+    if (strcmp(key, "loop_select") == 0)   return snprintf(buf, len, "%d", s->loop_select);
 
     if (strcmp(key, "chain_params") == 0)  return build_chain_params(buf, len);
     if (strcmp(key, "ui_hierarchy") == 0)  return build_ui_hierarchy(buf, len);
