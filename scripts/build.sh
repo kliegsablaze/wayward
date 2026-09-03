@@ -31,6 +31,11 @@ mkdir -p dist/wayward
 
 cp src/module.json dist/wayward/module.json
 
+# The host scans installed module directories for help.json at runtime and
+# needs no manifest entry, so the only thing that makes it reach a device is
+# being in the tarball.
+[ -f src/help.json ] && cp src/help.json dist/wayward/help.json
+
 cd dist
 tar -czvf wayward-module.tar.gz wayward/
 cd ..

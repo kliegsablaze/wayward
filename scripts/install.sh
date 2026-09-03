@@ -100,6 +100,16 @@ ssh "$HOST" "cd '$REMOTE_DIR' && \
     mv -f .wayward.so.incoming wayward.so && \
     mv -f .module.json.incoming module.json"
 
+# help.json rides along, or a hand-deployed Move shows help that a released
+# one does not. It is scanned from the module directory at runtime and named
+# nowhere in module.json, so being on disk is the whole of installing it. Same
+# staged rename as the others, for consistency rather than necessity: nothing
+# has this file mapped.
+if [ -f src/help.json ]; then
+    scp -q src/help.json "$HOST:$REMOTE_DIR/.help.json.incoming"
+    ssh "$HOST" "cd '$REMOTE_DIR' && mv -f .help.json.incoming help.json"
+fi
+
 # ---- reload, then PROVE the running process picked it up ----------------
 #
 # Copying the file is not deploying it. The shim has the old .so dlopen'd
