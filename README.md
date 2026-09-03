@@ -25,7 +25,9 @@ control on all five pages, walked through on interactive reconstructions of
 the Move's own display.
 
 See [DESIGN.md](DESIGN.md) for the interaction model, the phasing maths, and
-the DSP architecture.
+the DSP architecture, and [HANDOFF.md](HANDOFF.md) to pick the project up
+cold — the host contract's silent traps, the deploy tracks, and what was
+deliberately left undone.
 
 ## Installing
 
